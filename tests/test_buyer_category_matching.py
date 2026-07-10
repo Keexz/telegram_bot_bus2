@@ -192,9 +192,10 @@ class BuyerBrandMatchingTests(unittest.TestCase):
             raise buyer_bot.db.StockReservationError("out_of_stock", 0, "Single Custard Doughnut")
 
         buyer_bot.db.reserve_stock_and_insert_order = reserve_stock_and_insert_order
-        query = _FakeCallbackQuery("order_confirm")
+        message = _FakeMessage()
+        message.text = "TXN123456"
         update = types.SimpleNamespace(
-            callback_query=query,
+            message=message,
             effective_user=types.SimpleNamespace(id=123, username="buyer"),
         )
         context = types.SimpleNamespace(
@@ -217,14 +218,14 @@ class BuyerBrandMatchingTests(unittest.TestCase):
         )
 
         async def run():
-            return await buyer_bot.confirm_order(update, context)
+            return await buyer_bot.get_transaction_id(update, context)
 
         import asyncio
         outcome = asyncio.run(run())
 
         self.assertEqual(outcome, buyer_bot.PRODUCT)
-        self.assertTrue(query.message.replies)
-        self.assertIn("out of stock", query.message.replies[0].lower())
+        self.assertTrue(message.replies)
+        self.assertIn("out of stock", message.replies[0].lower())
         self.assertNotIn("pending_order", context.user_data)
 
     def test_confirm_order_rejects_quantity_when_stock_changed(self):
@@ -234,9 +235,10 @@ class BuyerBrandMatchingTests(unittest.TestCase):
             raise buyer_bot.db.StockReservationError("insufficient_stock", 2, "Single Custard Doughnut")
 
         buyer_bot.db.reserve_stock_and_insert_order = reserve_stock_and_insert_order
-        query = _FakeCallbackQuery("order_confirm")
+        message = _FakeMessage()
+        message.text = "TXN123456"
         update = types.SimpleNamespace(
-            callback_query=query,
+            message=message,
             effective_user=types.SimpleNamespace(id=123, username="buyer"),
         )
         context = types.SimpleNamespace(
@@ -259,14 +261,14 @@ class BuyerBrandMatchingTests(unittest.TestCase):
         )
 
         async def run():
-            return await buyer_bot.confirm_order(update, context)
+            return await buyer_bot.get_transaction_id(update, context)
 
         import asyncio
         outcome = asyncio.run(run())
 
         self.assertEqual(outcome, buyer_bot.PRODUCT)
-        self.assertTrue(query.message.replies)
-        self.assertIn("only 2 left", query.message.replies[0].lower())
+        self.assertTrue(message.replies)
+        self.assertIn("only 2 left", message.replies[0].lower())
         self.assertNotIn("pending_order", context.user_data)
 
 

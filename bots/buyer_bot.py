@@ -12,14 +12,18 @@ from utils.logger import logger
 from utils.menu import get_reply_keyboard
 
 # Conversation states
-EMAIL, PHONE, BRAND, PRODUCT, ORDER_QUANTITY, ORDER_NAME, ORDER_HALL, ORDER_ROOM, DELIVERY_TIME, ORDER_CONFIRM = range(10)
+EMAIL, PHONE, BRAND, PRODUCT, ORDER_QUANTITY, ORDER_NAME, ORDER_HALL, ORDER_ROOM, DELIVERY_TIME, ORDER_CONFIRM, TRANSACTION_ID = range(11)
 PAYMENT_REF_STATE = "PAYMENT_REF"
 ORDER_DRAFT_KEY = "pending_order"
 
+BANK_NAME = os.getenv("BANK_NAME", "BANK_NAME")
+ACCOUNT_NAME = os.getenv("ACCOUNT_NAME", "ACCOUNT_NAME")
+ACCOUNT_NUMBER = os.getenv("ACCOUNT_NUMBER", "ACCOUNT_NUMBER")
+
 DELIVERY_WINDOWS = [
-    "Today 5–6 PM",
-    "Today 7–8 PM",
-    "Tomorrow 5–6 PM",
+    "Monday 5–7 PM",
+    "Wednesday 5–7 PM",
+    "Friday 5–7 PM",
 ]
 
 
@@ -697,6 +701,42 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return ConversationHandler.END
 
+    total_price_formatted = _format_naira(order_data.get("total_price"))
+    payment_instruction = (
+        f"💸 Please transfer the total amount of *{total_price_formatted}* to complete your order:\n\n"
+        f"🏦 *Bank Name:* {BANK_NAME}\n"
+        f"👤 *Account Name:* {ACCOUNT_NAME}\n"
+        f"🔢 *Account Number:* {ACCOUNT_NUMBER}\n\n"
+        "After making the transfer, please reply to this message with your *Transaction ID* (or payment reference ID)."
+    )
+    await query.message.reply_text(
+        payment_instruction,
+        parse_mode="Markdown",
+        reply_markup=get_reply_keyboard()
+    )
+    context.chat_data["current_state"] = "TRANSACTION_ID"
+    return TRANSACTION_ID
+
+
+async def get_transaction_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    transaction_id = update.message.text.strip()
+    if not transaction_id or len(transaction_id) < 4 or len(transaction_id) > 64:
+        await update.message.reply_text(
+            "⚠️ Please send a valid Transaction ID (4–64 characters):",
+            reply_markup=get_reply_keyboard(),
+        )
+        return TRANSACTION_ID
+
+    order_data = context.user_data.get(ORDER_DRAFT_KEY)
+    if not order_data:
+        await update.message.reply_text(
+            "⚠️ No active order found. Please start again.",
+            reply_markup=get_reply_keyboard(),
+        )
+        return ConversationHandler.END
+
+    order_data["transaction_id"] = transaction_id
+
     created_at = datetime.utcnow().isoformat()
     payload = {
         "date_time": created_at,
@@ -714,6 +754,7 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "price": order_data.get("unit_price"),
         "total_price": order_data.get("total_price"),
         "delivery_window": order_data.get("delivery_window"),
+        "transaction_id": transaction_id,
         "status": "New",
     }
 
@@ -730,7 +771,7 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message = f"Sorry, {exc.product_name} is out of stock right now."
         else:
             message = f"Only {exc.available_stock} left for {exc.product_name}. Please start the order again with a lower quantity."
-        await query.message.reply_text(
+        await update.message.reply_text(
             message,
             reply_markup=get_reply_keyboard(),
         )
@@ -739,7 +780,7 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return PRODUCT
     except Exception:
         logger.exception("Failed to save order")
-        await query.message.reply_text(
+        await update.message.reply_text(
             "❌ Could not save your order right now. Please try again.",
             reply_markup=get_reply_keyboard(),
         )
@@ -760,10 +801,11 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Total: {_format_naira(payload.get('total_price'))}\n"
                 f"Location: {payload.get('hall')} / {payload.get('room_number')}\n"
                 f"Time: {payload.get('delivery_window')}\n"
+                f"Transaction ID: {transaction_id}\n"
                 f"Created: {payload.get('date_time')}"
             )
             await context.bot.send_message(chat_id=orders_group_chat_id, text=group_message)
-            logger.info(f"Posted order {order_id} to orders group chat_id={orders_group_chat_id}")
+            logger.info(f"Posted order {order_id} with Transaction ID {transaction_id} to orders group chat_id={orders_group_chat_id}")
         except ValueError:
             logger.error(
                 "ORDERS_GROUP_CHAT_ID must be an integer chat id; "
@@ -774,9 +816,21 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         logger.warning("ORDERS_GROUP_CHAT_ID not set; skipping group notification")
 
+    try:
+        db.payments_collection.insert_one({
+            "telegram_id": update.effective_user.id,
+            "order_id": order_id,
+            "reference_id": transaction_id,
+            "amount": order_data.get("total_price"),
+            "paid": False,
+            "created_at": datetime.utcnow().isoformat()
+        })
+    except Exception:
+        logger.exception("Failed to save payment record (non-blocking)")
+
     context.user_data.pop(ORDER_DRAFT_KEY, None)
     context.chat_data["current_state"] = None
-    await query.message.reply_text(
+    await update.message.reply_text(
         f"Thank you. Your order (ID: {order_id}) has been received. We will deliver between {_generate_delivery_message(order_data.get('delivery_window', 'the selected time window'))}.",
         reply_markup=get_reply_keyboard(),
     )
@@ -1073,6 +1127,9 @@ def get_buyer_conversation():
             ORDER_CONFIRM: [
                 CallbackQueryHandler(confirm_order, pattern=r"^order_confirm$"),
                 CallbackQueryHandler(cancel_order, pattern=r"^order_cancel$"),
+            ],
+            TRANSACTION_ID: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_transaction_id),
             ]
         },
 
