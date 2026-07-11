@@ -15,6 +15,7 @@ from utils.menu import get_reply_keyboard
 EMAIL, PHONE, BRAND, PRODUCT, ORDER_QUANTITY, ORDER_NAME, ORDER_HALL, ORDER_ROOM, DELIVERY_TIME, ORDER_CONFIRM, PAYMENT_SENDER_NAME, PAYMENT_AMOUNT = range(12)
 PAYMENT_REF_STATE = "PAYMENT_REF"
 ORDER_DRAFT_KEY = "pending_order"
+UI_MESSAGE_IDS_KEY = "ui_message_ids"
 
 BANK_NAME = os.getenv("BANK_NAME", "BANK_NAME")
 ACCOUNT_NAME = os.getenv("ACCOUNT_NAME", "ACCOUNT_NAME")
@@ -264,6 +265,50 @@ def _find_product_record(item_id):
     return None
 
 
+def _remember_ui_message(context: ContextTypes.DEFAULT_TYPE, message):
+    if not message:
+        return
+    message_id = getattr(message, "message_id", None)
+    if message_id is None:
+        return
+    ids = context.chat_data.setdefault(UI_MESSAGE_IDS_KEY, [])
+    if message_id not in ids:
+        ids.append(message_id)
+
+
+async def _clear_ui_messages(update: Update, context: ContextTypes.DEFAULT_TYPE, preserve_message_ids=None):
+    tracked = list(context.chat_data.get(UI_MESSAGE_IDS_KEY, []))
+    if not tracked:
+        return
+
+    preserve = set()
+    for message_id in preserve_message_ids or []:
+        try:
+            preserve.add(int(message_id))
+        except (TypeError, ValueError):
+            continue
+
+    chat = update.effective_chat
+    chat_id = getattr(chat, "id", None)
+    bot = getattr(context, "bot", None)
+
+    remaining = []
+    for message_id in tracked:
+        if message_id in preserve:
+            remaining.append(message_id)
+            continue
+        if bot and chat_id is not None:
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=message_id)
+            except Exception:
+                pass
+
+    if remaining:
+        context.chat_data[UI_MESSAGE_IDS_KEY] = remaining
+    else:
+        context.chat_data.pop(UI_MESSAGE_IDS_KEY, None)
+
+
 def _delivery_option_buttons():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(option, callback_data=f"delivery::{option}")]
@@ -294,6 +339,7 @@ def _generate_delivery_message(window_label):
 # --------------------------
 async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    current_message_id = getattr(query.message, "message_id", None) if query else None
     if query:
         # acknowledge the callback to remove loading indicator and give feedback
         try:
@@ -335,12 +381,28 @@ async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👋 Hi {update.effective_user.first_name or 'there'}",
             reply_markup=get_reply_keyboard(),
         )
-        return await show_brands(update, context)
+        if query:
+            await _clear_ui_messages(update, context, preserve_message_ids=[current_message_id] if current_message_id is not None else [])
+        return await show_brands(update, context, wipe_previous=True)
 
     await msg.reply_text(
         "🛒 Buyer registration — please enter your email address:",
         reply_markup=get_reply_keyboard(),
     )
+    if query:
+        await _clear_ui_messages(update, context, preserve_message_ids=[current_message_id] if current_message_id is not None else [])
+        try:
+            await msg.edit_text("🛍️ Buyer registration — please enter your email address:")
+        except Exception:
+            await msg.reply_text(
+                "🛍️ Buyer registration — please enter your email address:",
+                reply_markup=get_reply_keyboard(),
+            )
+    else:
+        await msg.reply_text(
+            "🛍️ Buyer registration — please enter your email address:",
+            reply_markup=get_reply_keyboard(),
+        )
     return EMAIL
 
 
@@ -567,6 +629,7 @@ async def _show_products_legacy(update: Update, context: ContextTypes.DEFAULT_TY
 
     return await _render_products_list(
         query.message,
+        context,
         products,
         f"Products from {selected_brand}",
         back_cb,
@@ -576,6 +639,8 @@ async def _show_products_legacy(update: Update, context: ContextTypes.DEFAULT_TY
 async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    current_message_id = getattr(query.message, "message_id", None)
+    await _clear_ui_messages(update, context, preserve_message_ids=[current_message_id] if current_message_id is not None else [])
 
     raw_data = query.data or ""
     submenu = None
@@ -594,6 +659,7 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.chat_data["current_state"] = "PRODUCT"
         return await _render_products_list(
             query.message,
+            context,
             products,
             f"Products from {selected_brand}",
             "brand::Mr. Dough",
@@ -620,6 +686,7 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return await _render_products_list(
         query.message,
+        context,
         products,
         f"Products from {selected_brand}",
         back_cb,
@@ -1213,6 +1280,185 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_reply_keyboard(),
     )
     return ConversationHandler.END
+
+
+async def show_brands(update: Update, context: ContextTypes.DEFAULT_TYPE, wipe_previous: bool = False):
+    query = update.callback_query
+    msg = query.message if query else update.message
+
+    if wipe_previous:
+        preserve = [getattr(msg, "message_id", None)] if query else []
+        await _clear_ui_messages(update, context, preserve_message_ids=preserve)
+
+    brands = _collect_available_brands()
+    if not brands:
+        sent = await msg.reply_text(
+            "No brands are available yet.",
+            reply_markup=get_reply_keyboard(),
+        )
+        _remember_ui_message(context, sent)
+        context.chat_data["conversation_active"] = False
+        context.chat_data["current_state"] = None
+        return ConversationHandler.END
+
+    keyboard = [[InlineKeyboardButton(brand_name, callback_data=f"brand::{brand_name}")] for brand_name in brands]
+    markup = InlineKeyboardMarkup(keyboard)
+
+    if query:
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        try:
+            await msg.edit_text("Choose a brand:", reply_markup=markup)
+        except Exception:
+            sent = await msg.reply_text("Choose a brand:", reply_markup=markup)
+            _remember_ui_message(context, sent)
+    else:
+        sent = await msg.reply_text("Choose a brand:", reply_markup=markup)
+        _remember_ui_message(context, sent)
+
+    context.chat_data["conversation_active"] = True
+    context.chat_data["current_state"] = "BRAND"
+    return BRAND
+
+
+async def _render_products_list(message, context, products, heading, back_callback):
+    if not products:
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅ Back", callback_data=back_callback)]
+        ])
+        try:
+            await message.edit_text(
+                f"ℹ️ No products found for {heading}.",
+                reply_markup=markup,
+            )
+        except Exception:
+            sent = await message.reply_text(
+                f"ℹ️ No products found for {heading}.",
+                reply_markup=markup,
+            )
+            _remember_ui_message(context, sent)
+        return PRODUCT
+
+    try:
+        await message.edit_text(f"🛒 {heading}")
+    except Exception:
+        pass
+
+    for index, item in enumerate(products, start=1):
+        item_id = str(item.get("_id") or item.get("id"))
+        name = _extract_product_name(item)
+        price = _extract_product_price(item)
+        image = _extract_product_image(item)
+        caption = f"{index}. {name} – {_format_naira(price)}"
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("View details", callback_data=f"details::{item_id}"),
+                InlineKeyboardButton("Order this", callback_data=f"order::{item_id}"),
+            ]
+        ])
+
+        try:
+            if image:
+                sent = await message.reply_photo(photo=image, caption=caption, reply_markup=keyboard)
+            else:
+                sent = await message.reply_text(caption, reply_markup=keyboard)
+            if context:
+                _remember_ui_message(context, sent)
+        except Exception:
+            sent = await message.reply_text(caption, reply_markup=keyboard)
+            _remember_ui_message(context, sent)
+
+    sent = await message.reply_text(
+        "Choose a product option above, or go back below.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅ Back", callback_data=back_callback)]
+        ]),
+    )
+    _remember_ui_message(context, sent)
+    return PRODUCT
+
+
+async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    current_message_id = getattr(query.message, "message_id", None) if query else None
+    if query:
+        try:
+            await query.answer(text="Opening buyer flow...")
+        except Exception:
+            try:
+                await query.answer()
+            except Exception:
+                logger.exception("Failed to answer callback_query")
+        try:
+            await query.message.edit_text("🔄 Starting buyer flow...")
+        except Exception:
+            pass
+
+    msg = query.message if query else update.message
+
+    logger.info(f"start_buyer_flow triggered for user {update.effective_user.id}")
+
+    context.user_data.clear()
+    context.chat_data.clear()
+    context.user_data.pop("awaiting_payment_ref", None)
+    context.chat_data["conversation_active"] = True
+
+    if query:
+        await _clear_ui_messages(update, context, preserve_message_ids=[current_message_id] if current_message_id is not None else [])
+
+    try:
+        existing = db.buyers_collection.find_one({"telegram_id": update.effective_user.id})
+    except Exception:
+        logger.exception("DB lookup failed in start_buyer_flow")
+        await msg.reply_text(
+            "❌ An internal error occurred. Please try again later.",
+            reply_markup=get_reply_keyboard(),
+        )
+        return ConversationHandler.END
+
+    if existing:
+        if query:
+            try:
+                await msg.edit_text(f"👋 Hi {update.effective_user.first_name or 'there'}")
+            except Exception:
+                await msg.reply_text(
+                    f"👋 Hi {update.effective_user.first_name or 'there'}",
+                    reply_markup=get_reply_keyboard(),
+                )
+        else:
+            await msg.reply_text(
+                f"👋 Hi {update.effective_user.first_name or 'there'}",
+                reply_markup=get_reply_keyboard(),
+            )
+        return await show_brands(update, context, wipe_previous=True)
+
+    if query:
+        try:
+            await msg.edit_text("🛍️ Buyer registration — please enter your email address:")
+        except Exception:
+            await msg.reply_text(
+                "🛍️ Buyer registration — please enter your email address:",
+                reply_markup=get_reply_keyboard(),
+            )
+    else:
+        await msg.reply_text(
+            "🛍️ Buyer registration — please enter your email address:",
+            reply_markup=get_reply_keyboard(),
+        )
+    return EMAIL
+
+
+async def back_to_brands(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if query:
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        await _clear_ui_messages(update, context, preserve_message_ids=[getattr(query.message, "message_id", None)])
+    return await show_brands(update, context, wipe_previous=True)
 
 
 # --------------------------

@@ -172,7 +172,7 @@ class BuyerBrandMatchingTests(unittest.TestCase):
 
         captured = {}
 
-        async def fake_render(message, products, heading, back_callback):
+        async def fake_render(message, context, products, heading, back_callback):
             captured["products"] = [item["name"] for item in products]
             captured["heading"] = heading
             captured["back_callback"] = back_callback
