@@ -192,6 +192,42 @@ class BuyerBrandMatchingTests(unittest.TestCase):
         self.assertEqual(captured["heading"], "Products from Vanilla Custard Doughnut")
         self.assertEqual(captured["back_callback"], "brand::Mr. Dough")
 
+    def test_product_details_falls_back_to_stored_id_field(self):
+        buyer_bot = _load_buyer_bot(
+            products=[
+                {
+                    "_id": "mr_dough_vanilla_001",
+                    "id": "mr_dough_vanilla_001",
+                    "name": "Single Vanilla Custard Doughnut Package",
+                    "business_name": "Mr. Dough",
+                    "brand": "Mr. Dough",
+                    "category": "Vanilla Custard Doughnut",
+                    "price": 1500,
+                    "amount_in_stock": 29,
+                }
+            ],
+        )
+
+        # Simulate a Firestore document key mismatch: the stored product is
+        # found by scanning returned docs, not by direct document-key lookup.
+        buyer_bot.db.products.get_by_key = lambda key: None
+
+        message = _FakeMessage()
+        query = _FakeCallbackQuery("details::mr_dough_vanilla_001")
+        query.message = message
+        update = types.SimpleNamespace(callback_query=query)
+        context = types.SimpleNamespace(user_data={}, chat_data={})
+
+        async def run():
+            return await buyer_bot.show_product_details(update, context)
+
+        import asyncio
+        outcome = asyncio.run(run())
+
+        self.assertEqual(outcome, buyer_bot.PRODUCT)
+        self.assertTrue(message.replies)
+        self.assertNotIn("Product not found", message.replies[0])
+
     def test_out_of_stock_product_is_blocked_before_quantity_prompt(self):
         buyer_bot = _load_buyer_bot()
         buyer_bot.db.products.find_one = lambda query: {

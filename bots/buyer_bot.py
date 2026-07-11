@@ -225,6 +225,45 @@ def _resolve_mr_dough_submenu(callback_data):
     return MR_DOUGH_SUBMENUS.get(key)
 
 
+def _find_product_record(item_id):
+    if item_id is None:
+        return None
+
+    item_id = str(item_id).strip()
+    if not item_id:
+        return None
+
+    try:
+        product = db.products.get_by_key(item_id)
+        if product:
+            return product
+    except Exception:
+        logger.exception("Primary product lookup by document id failed")
+
+    try:
+        product = db.products.find_one({"_id": item_id})
+        if product:
+            return product
+    except Exception:
+        logger.exception("Product lookup by _id field failed")
+
+    try:
+        product = db.products.find_one({"id": item_id})
+        if product:
+            return product
+    except Exception:
+        logger.exception("Product lookup by id field failed")
+
+    try:
+        for product in db.products.find({}):
+            if str(product.get("_id") or "") == item_id or str(product.get("id") or "") == item_id:
+                return product
+    except Exception:
+        logger.exception("Fallback product lookup failed")
+
+    return None
+
+
 def _delivery_option_buttons():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(option, callback_data=f"delivery::{option}")]
@@ -595,7 +634,7 @@ async def show_product_details(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
     item_id = query.data.replace("details::", "")
 
-    product = db.products.find_one({"_id": item_id})
+    product = _find_product_record(item_id)
     if not product:
         await query.message.reply_text(
             "❌ Product not found.",
@@ -624,7 +663,7 @@ async def start_order_for_product(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     await query.answer()
     item_id = query.data.replace("order::", "")
-    product = db.products.find_one({"_id": item_id})
+    product = _find_product_record(item_id)
 
     if not product:
         await query.message.reply_text(
