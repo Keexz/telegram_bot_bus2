@@ -319,8 +319,40 @@ def _read_stock_count(product: Dict[str, Any]) -> int:
         return 0
 
 
+def _resolve_product_document_ref(product_id: str, order_payload: Dict[str, Any]):
+    product_id = str(product_id or "").strip()
+    if not product_id:
+        return None
+
+    direct_ref = products_collection.collection.document(product_id)
+    direct_snapshot = direct_ref.get()
+    if direct_snapshot.exists:
+        return direct_ref
+
+    requested_name = str(order_payload.get("product_name") or "").strip().lower()
+    for snapshot in products_collection.collection.stream():
+        product = snapshot.to_dict() or {}
+        stored_ids = {
+            str(snapshot.id).strip(),
+            str(product.get("_id") or "").strip(),
+            str(product.get("id") or "").strip(),
+        }
+        normalized_ids = {value for value in stored_ids if value}
+        if product_id in normalized_ids:
+            return snapshot.reference
+        if requested_name:
+            candidate_name = str(product.get("name") or product.get("product_name") or "").strip().lower()
+            if candidate_name and candidate_name == requested_name:
+                return snapshot.reference
+
+    return None
+
+
 def reserve_stock_and_insert_order(product_id: str, quantity: int, order_payload: Dict[str, Any]):
-    product_ref = products_collection.collection.document(str(product_id))
+    product_ref = _resolve_product_document_ref(product_id, order_payload)
+    if product_ref is None:
+        raise StockReservationError("missing", 0, order_payload.get("product_name") or "this product")
+
     order_ref = orders_collection.collection.document()
     transaction = _firestore_client.transaction()
 

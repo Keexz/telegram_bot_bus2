@@ -9,7 +9,7 @@ from utils.logger import logger
 from utils.menu import get_bot_commands, get_reply_keyboard
 from bots.buyer_bot import (
     get_buyer_conversation, debug_state, view_cart, pay_for_products,
-    start_buyer_flow, start_place_order, debug_products
+    start_buyer_flow, debug_products
 )
 
 load_dotenv()
@@ -104,10 +104,6 @@ async def cmd_pay_for_products(update: Update, context: ContextTypes.DEFAULT_TYP
     await pay_for_products(update, context)
 
 
-async def cmd_browse_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await start_buyer_flow(update, context)
-
-
 async def cmd_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if not chat:
@@ -190,13 +186,11 @@ def main():
     app.add_handler(CommandHandler("support", cmd_support))
     app.add_handler(CommandHandler("help", cmd_support))
     app.add_handler(CommandHandler("payforproducts", cmd_pay_for_products))
-    app.add_handler(CommandHandler("browseproducts", cmd_browse_products))
     app.add_handler(CommandHandler("myorders", btn_my_orders))
     app.add_handler(CommandHandler("chatid", cmd_chat_id))
     app.add_handler(CommandHandler("testordersgroup", cmd_test_orders_group))
     app.add_handler(CommandHandler("debugstate", debug_state))
     app.add_handler(CommandHandler("debugproducts", debug_products))
-    app.add_handler(MessageHandler(filters.Regex(r"^Browse Products$"), cmd_browse_products))
     app.add_handler(MessageHandler(filters.Regex(r"^My Orders$"), btn_my_orders))
     app.add_handler(MessageHandler(filters.Regex(r"^Help$"), cmd_support))
 
