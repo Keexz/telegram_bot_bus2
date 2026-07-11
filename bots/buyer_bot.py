@@ -332,7 +332,7 @@ async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if existing:
         await msg.reply_text(
-            f"👋 Hi {update.effective_user.first_name or 'there'} — you're already registered.",
+            f"👋 Hi {update.effective_user.first_name or 'there'}",
             reply_markup=get_reply_keyboard(),
         )
         return await show_brands(update, context)
@@ -559,7 +559,7 @@ async def _show_products_legacy(update: Update, context: ContextTypes.DEFAULT_TY
     products = _products_for_brand(selected_brand)
 
     context.chat_data["current_state"] = "PRODUCT"
-    
+
     # If the sub-brand is Vanilla Custard or Milky, going back should return to Mr. Dough selection
     back_cb = "nav::back_to_brands"
     if _normalize_text(selected_brand) in {"vanilla custard doughnut", "milky doughnut"}:
