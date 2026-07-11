@@ -140,11 +140,20 @@ def _extract_product_image(item):
 
 
 def _extract_brand_name(item):
-    for key in ("business_name", "brand", "brand_name", "brandName", "name"):
+    for key in ("business_name", "brand", "brand_name", "brandName", "category", "category_name", "type", "name"):
         value = item.get(key)
         if value:
             return str(value).strip()
     return ""
+
+
+def _candidate_brand_names(item):
+    values = []
+    for key in ("business_name", "brand", "brand_name", "brandName", "category", "category_name", "type"):
+        value = item.get(key)
+        if value:
+            values.append(str(value).strip())
+    return values
 
 
 def _extract_stock_count(item):
@@ -185,7 +194,8 @@ def _products_for_brand(brand_name):
     normalized_brand = _normalize_text(brand_name)
 
     for product in db.products.find({}):
-        if _normalize_text(_extract_brand_name(product)) == normalized_brand:
+        candidates = {_normalize_text(value) for value in _candidate_brand_names(product)}
+        if normalized_brand in candidates:
             selected.append(product)
 
     return selected
@@ -472,7 +482,6 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if _normalize_text(selected_brand) == "mr. dough":
         keyboard = [
             [InlineKeyboardButton("Vanilla Custard Doughnut", callback_data="brand::Vanilla Custard Doughnut")],
-            [InlineKeyboardButton("or", callback_data="noop")],
             [InlineKeyboardButton("Milky Doughnut", callback_data="brand::Milky Doughnut")],
             [InlineKeyboardButton("⬅ Back", callback_data="nav::back_to_brands")]
         ]

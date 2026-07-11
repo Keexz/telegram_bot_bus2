@@ -135,6 +135,18 @@ class BuyerBrandMatchingTests(unittest.TestCase):
             "Pack of 3 Doughnuts",
         ])
 
+    def test_products_for_brand_matches_category_fallback(self):
+        buyer_bot = _load_buyer_bot(
+            products=[
+                {"name": "Fabs", "category": "Snacks", "price": 650},
+                {"name": "Cupcake", "category": "Bakery", "price": 400},
+            ],
+        )
+
+        matches = buyer_bot._products_for_brand("Snacks")
+
+        self.assertEqual([item["name"] for item in matches], ["Fabs"])
+
     def test_out_of_stock_product_is_blocked_before_quantity_prompt(self):
         buyer_bot = _load_buyer_bot()
         buyer_bot.db.products.find_one = lambda query: {
