@@ -105,7 +105,7 @@ async def cmd_pay_for_products(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def cmd_browse_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await start_place_order(update, context)
+    await start_buyer_flow(update, context)
 
 
 async def cmd_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
