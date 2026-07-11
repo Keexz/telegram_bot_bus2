@@ -19,6 +19,17 @@ ORDER_DRAFT_KEY = "pending_order"
 BANK_NAME = os.getenv("BANK_NAME", "BANK_NAME")
 ACCOUNT_NAME = os.getenv("ACCOUNT_NAME", "ACCOUNT_NAME")
 ACCOUNT_NUMBER = os.getenv("ACCOUNT_NUMBER", "ACCOUNT_NUMBER")
+MR_DOUGH_NAME = "Mr. Dough"
+MR_DOUGH_SUBMENUS = {
+    "vanilla": {
+        "label": "Vanilla Custard Doughnut",
+        "category": "Vanilla Custard Doughnut",
+    },
+    "milky": {
+        "label": "Milky Doughnut",
+        "category": "Milky Doughnut",
+    },
+}
 
 DELIVERY_WINDOWS = [
     "Monday 5–7 PM",
@@ -199,6 +210,19 @@ def _products_for_brand(brand_name):
             selected.append(product)
 
     return selected
+
+
+def _build_mr_dough_submenu_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(MR_DOUGH_SUBMENUS["vanilla"]["label"], callback_data="mr_dough_submenu::vanilla")],
+        [InlineKeyboardButton(MR_DOUGH_SUBMENUS["milky"]["label"], callback_data="mr_dough_submenu::milky")],
+        [InlineKeyboardButton("⬅ Back", callback_data="nav::back_to_brands")],
+    ])
+
+
+def _resolve_mr_dough_submenu(callback_data):
+    key = str(callback_data or "").replace("mr_dough_submenu::", "")
+    return MR_DOUGH_SUBMENUS.get(key)
 
 
 def _delivery_option_buttons():
@@ -471,7 +495,7 @@ async def noop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
 
-async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _show_products_legacy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
@@ -498,6 +522,59 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.chat_data["current_state"] = "PRODUCT"
     
     # If the sub-brand is Vanilla Custard or Milky, going back should return to Mr. Dough selection
+    back_cb = "nav::back_to_brands"
+    if _normalize_text(selected_brand) in {"vanilla custard doughnut", "milky doughnut"}:
+        back_cb = "brand::Mr. Dough"
+
+    return await _render_products_list(
+        query.message,
+        products,
+        f"Products from {selected_brand}",
+        back_cb,
+    )
+
+
+async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    raw_data = query.data or ""
+    submenu = None
+
+    if raw_data.startswith("mr_dough_submenu::"):
+        submenu = _resolve_mr_dough_submenu(raw_data)
+        if not submenu:
+            await query.message.reply_text(
+                "âŒ Unknown Mr. Dough option.",
+                reply_markup=get_reply_keyboard(),
+            )
+            return PRODUCT
+        selected_brand = submenu["category"]
+        context.user_data["selected_brand"] = selected_brand
+        products = _products_for_brand(selected_brand)
+        context.chat_data["current_state"] = "PRODUCT"
+        return await _render_products_list(
+            query.message,
+            products,
+            f"Products from {selected_brand}",
+            "brand::Mr. Dough",
+        )
+
+    selected_brand = raw_data.replace("brand::", "")
+    context.user_data["selected_brand"] = selected_brand
+
+    if _normalize_text(selected_brand) == _normalize_text(MR_DOUGH_NAME):
+        markup = _build_mr_dough_submenu_keyboard()
+        try:
+            await query.message.edit_text("Please choose a type of doughnut:", reply_markup=markup)
+        except Exception:
+            await query.message.reply_text("Please choose a type of doughnut:", reply_markup=markup)
+        context.chat_data["current_state"] = "PRODUCT"
+        return PRODUCT
+
+    products = _products_for_brand(selected_brand)
+    context.chat_data["current_state"] = "PRODUCT"
+
     back_cb = "nav::back_to_brands"
     if _normalize_text(selected_brand) in {"vanilla custard doughnut", "milky doughnut"}:
         back_cb = "brand::Mr. Dough"
@@ -1164,6 +1241,7 @@ def get_buyer_conversation():
             CallbackQueryHandler(start_buyer_flow, pattern=r"^start_buyer$"),
             CallbackQueryHandler(start_place_order, pattern=r"^placeorder$"),
             CallbackQueryHandler(noop_callback, pattern=r"^noop$"),
+            CallbackQueryHandler(show_products, pattern=r"^mr_dough_submenu::.+$"),
             CommandHandler("debugstate", debug_state),
             CommandHandler("viewcart", view_cart),
             CommandHandler("payforproducts", pay_for_products),
@@ -1185,14 +1263,16 @@ def get_buyer_conversation():
                 CallbackQueryHandler(show_products, pattern=r"^brand::.+$"),
                 CallbackQueryHandler(back_to_brands, pattern=r"^nav::back_to_brands$"),
                 CallbackQueryHandler(start_buyer_flow, pattern=r"^start_buyer$"),
-                CallbackQueryHandler(start_place_order, pattern=r"^placeorder$")
+                CallbackQueryHandler(start_place_order, pattern=r"^placeorder$"),
+                CallbackQueryHandler(show_products, pattern=r"^mr_dough_submenu::.+$"),
             ],
             PRODUCT: [
                 CallbackQueryHandler(show_product_details, pattern=r"^details::.+$"),
                 CallbackQueryHandler(start_order_for_product, pattern=r"^order::.+$"),
                 CallbackQueryHandler(back_to_brands, pattern=r"^nav::back_to_brands$"),
                 CallbackQueryHandler(start_buyer_flow, pattern=r"^start_buyer$"),
-                CallbackQueryHandler(start_place_order, pattern=r"^placeorder$")
+                CallbackQueryHandler(start_place_order, pattern=r"^placeorder$"),
+                CallbackQueryHandler(show_products, pattern=r"^mr_dough_submenu::.+$"),
             ],
             ORDER_QUANTITY: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_order_quantity),

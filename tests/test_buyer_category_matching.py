@@ -147,6 +147,51 @@ class BuyerBrandMatchingTests(unittest.TestCase):
 
         self.assertEqual([item["name"] for item in matches], ["Fabs"])
 
+    def test_mr_dough_submenu_fetches_products_by_category(self):
+        buyer_bot = _load_buyer_bot(
+            products=[
+                {
+                    "name": "Single Vanilla Custard Doughnut Package",
+                    "business_name": "Mr. Dough",
+                    "brand": "Mr. Dough",
+                    "category": "Vanilla Custard Doughnut",
+                    "price": 1500,
+                },
+                {
+                    "name": "Single Milky Doughnut",
+                    "business_name": "Mr. Dough",
+                    "brand": "Mr. Dough",
+                    "category": "Milky Doughnut",
+                    "price": 500,
+                },
+            ],
+        )
+
+        captured = {}
+
+        async def fake_render(message, products, heading, back_callback):
+            captured["products"] = [item["name"] for item in products]
+            captured["heading"] = heading
+            captured["back_callback"] = back_callback
+            return buyer_bot.PRODUCT
+
+        buyer_bot._render_products_list = fake_render
+
+        query = _FakeCallbackQuery("mr_dough_submenu::vanilla")
+        update = types.SimpleNamespace(callback_query=query)
+        context = types.SimpleNamespace(user_data={}, chat_data={})
+
+        async def run():
+            return await buyer_bot.show_products(update, context)
+
+        import asyncio
+        outcome = asyncio.run(run())
+
+        self.assertEqual(outcome, buyer_bot.PRODUCT)
+        self.assertEqual(captured["products"], ["Single Vanilla Custard Doughnut Package"])
+        self.assertEqual(captured["heading"], "Products from Vanilla Custard Doughnut")
+        self.assertEqual(captured["back_callback"], "brand::Mr. Dough")
+
     def test_out_of_stock_product_is_blocked_before_quantity_prompt(self):
         buyer_bot = _load_buyer_bot()
         buyer_bot.db.products.find_one = lambda query: {
