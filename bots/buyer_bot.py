@@ -1308,6 +1308,7 @@ def get_buyer_conversation():
             PRODUCT: [
                 CallbackQueryHandler(show_product_details, pattern=r"^details::.+$"),
                 CallbackQueryHandler(start_order_for_product, pattern=r"^order::.+$"),
+                CallbackQueryHandler(show_products, pattern=r"^brand::.+$"),
                 CallbackQueryHandler(back_to_brands, pattern=r"^nav::back_to_brands$"),
                 CallbackQueryHandler(start_buyer_flow, pattern=r"^start_buyer$"),
                 CallbackQueryHandler(start_place_order, pattern=r"^placeorder$"),

@@ -68,8 +68,11 @@ def _load_buyer_bot(sellers=None, products=None):
 
     fake_telegram = types.ModuleType("telegram")
     fake_telegram.Update = object
-    fake_telegram.InlineKeyboardMarkup = object
-    fake_telegram.InlineKeyboardButton = object
+    fake_telegram.InlineKeyboardMarkup = lambda keyboard: keyboard
+    fake_telegram.InlineKeyboardButton = lambda text, callback_data=None: types.SimpleNamespace(
+        text=text,
+        callback_data=callback_data,
+    )
 
     fake_ext = types.ModuleType("telegram.ext")
     fake_ext.ConversationHandler = types.SimpleNamespace(END=-1)
@@ -227,6 +230,35 @@ class BuyerBrandMatchingTests(unittest.TestCase):
         self.assertEqual(outcome, buyer_bot.PRODUCT)
         self.assertTrue(message.replies)
         self.assertNotIn("Product not found", message.replies[0])
+
+    def test_mr_dough_back_button_returns_to_submenu(self):
+        buyer_bot = _load_buyer_bot(
+            products=[
+                {
+                    "name": "Single Vanilla Custard Doughnut Package",
+                    "business_name": "Mr. Dough",
+                    "brand": "Mr. Dough",
+                    "category": "Vanilla Custard Doughnut",
+                    "price": 1500,
+                }
+            ],
+        )
+
+        message = _FakeMessage()
+        query = _FakeCallbackQuery("brand::Mr. Dough")
+        query.message = message
+        update = types.SimpleNamespace(callback_query=query)
+        context = types.SimpleNamespace(user_data={}, chat_data={})
+
+        async def run():
+            return await buyer_bot.show_products(update, context)
+
+        import asyncio
+        outcome = asyncio.run(run())
+
+        self.assertEqual(outcome, buyer_bot.PRODUCT)
+        self.assertTrue(message.replies)
+        self.assertIn("choose a type of doughnut", message.replies[0].lower())
 
     def test_out_of_stock_product_is_blocked_before_quantity_prompt(self):
         buyer_bot = _load_buyer_bot()
