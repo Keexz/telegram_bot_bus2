@@ -61,7 +61,8 @@ def _load_buyer_bot(sellers=None, products=None):
     fake_database.buyers_collection = _FakeCollection()
     fake_database.cart_collection = _FakeCollection()
     fake_database.orders_collection = _FakeCollection()
-    fake_database.payments = _FakeCollection()
+    fake_database.payments_collection = _FakeCollection()
+    fake_database.payments = fake_database.payments_collection
     fake_database.StockReservationError = StockReservationError
     fake_database.reserve_stock_and_insert_order = reserve_stock_and_insert_order
 
@@ -193,7 +194,7 @@ class BuyerBrandMatchingTests(unittest.TestCase):
 
         buyer_bot.db.reserve_stock_and_insert_order = reserve_stock_and_insert_order
         message = _FakeMessage()
-        message.text = "TXN123456"
+        message.text = "1500"
         update = types.SimpleNamespace(
             message=message,
             effective_user=types.SimpleNamespace(id=123, username="buyer"),
@@ -212,13 +213,14 @@ class BuyerBrandMatchingTests(unittest.TestCase):
                     "hall": "A Hall",
                     "room_number": "101",
                     "delivery_window": "10am",
+                    "payment_sender_name": "Ada Account",
                 }
             },
             chat_data={},
         )
 
         async def run():
-            return await buyer_bot.get_transaction_id(update, context)
+            return await buyer_bot.get_payment_amount(update, context)
 
         import asyncio
         outcome = asyncio.run(run())
@@ -236,7 +238,7 @@ class BuyerBrandMatchingTests(unittest.TestCase):
 
         buyer_bot.db.reserve_stock_and_insert_order = reserve_stock_and_insert_order
         message = _FakeMessage()
-        message.text = "TXN123456"
+        message.text = "1500"
         update = types.SimpleNamespace(
             message=message,
             effective_user=types.SimpleNamespace(id=123, username="buyer"),
@@ -255,13 +257,14 @@ class BuyerBrandMatchingTests(unittest.TestCase):
                     "hall": "A Hall",
                     "room_number": "101",
                     "delivery_window": "10am",
+                    "payment_sender_name": "Ada Account",
                 }
             },
             chat_data={},
         )
 
         async def run():
-            return await buyer_bot.get_transaction_id(update, context)
+            return await buyer_bot.get_payment_amount(update, context)
 
         import asyncio
         outcome = asyncio.run(run())

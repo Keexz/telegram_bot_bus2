@@ -12,7 +12,7 @@ from utils.logger import logger
 from utils.menu import get_reply_keyboard
 
 # Conversation states
-EMAIL, PHONE, BRAND, PRODUCT, ORDER_QUANTITY, ORDER_NAME, ORDER_HALL, ORDER_ROOM, DELIVERY_TIME, ORDER_CONFIRM, TRANSACTION_ID = range(11)
+EMAIL, PHONE, BRAND, PRODUCT, ORDER_QUANTITY, ORDER_NAME, ORDER_HALL, ORDER_ROOM, DELIVERY_TIME, ORDER_CONFIRM, PAYMENT_SENDER_NAME, PAYMENT_AMOUNT = range(12)
 PAYMENT_REF_STATE = "PAYMENT_REF"
 ORDER_DRAFT_KEY = "pending_order"
 
@@ -163,6 +163,8 @@ def _collect_available_brands():
         brand_name = _extract_brand_name(seller)
         normalized = _normalize_text(brand_name)
         if brand_name and normalized not in seen:
+            if normalized in {"vanilla custard doughnut", "milky doughnut"}:
+                continue
             seen.add(normalized)
             brand_names.append(brand_name)
 
@@ -170,6 +172,8 @@ def _collect_available_brands():
         brand_name = _extract_brand_name(product)
         normalized = _normalize_text(brand_name)
         if brand_name and normalized not in seen:
+            if normalized in {"vanilla custard doughnut", "milky doughnut"}:
+                continue
             seen.add(normalized)
             brand_names.append(brand_name)
 
@@ -448,6 +452,15 @@ async def _render_products_list(message, products, heading, back_callback):
 # --------------------------
 # Brand → Products
 # --------------------------
+async def noop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if query:
+        try:
+            await query.answer()
+        except Exception:
+            pass
+
+
 async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -455,14 +468,36 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected_brand = query.data.replace("brand::", "")
     context.user_data["selected_brand"] = selected_brand
 
+    # If the user selected the main "Mr. Dough" brand, show the sub-brands/options
+    if _normalize_text(selected_brand) == "mr. dough":
+        keyboard = [
+            [InlineKeyboardButton("Vanilla Custard Doughnut", callback_data="brand::Vanilla Custard Doughnut")],
+            [InlineKeyboardButton("or", callback_data="noop")],
+            [InlineKeyboardButton("Milky Doughnut", callback_data="brand::Milky Doughnut")],
+            [InlineKeyboardButton("⬅ Back", callback_data="nav::back_to_brands")]
+        ]
+        markup = InlineKeyboardMarkup(keyboard)
+        try:
+            await query.message.edit_text("Please choose a type of doughnut:", reply_markup=markup)
+        except Exception:
+            await query.message.reply_text("Please choose a type of doughnut:", reply_markup=markup)
+        context.chat_data["current_state"] = "PRODUCT"
+        return PRODUCT
+
     products = _products_for_brand(selected_brand)
 
     context.chat_data["current_state"] = "PRODUCT"
+    
+    # If the sub-brand is Vanilla Custard or Milky, going back should return to Mr. Dough selection
+    back_cb = "nav::back_to_brands"
+    if _normalize_text(selected_brand) in {"vanilla custard doughnut", "milky doughnut"}:
+        back_cb = "brand::Mr. Dough"
+
     return await _render_products_list(
         query.message,
         products,
         f"Products from {selected_brand}",
-        "nav::back_to_brands",
+        back_cb,
     )
 
 
@@ -707,25 +742,25 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🏦 *Bank Name:* {BANK_NAME}\n"
         f"👤 *Account Name:* {ACCOUNT_NAME}\n"
         f"🔢 *Account Number:* {ACCOUNT_NUMBER}\n\n"
-        "After making the transfer, please reply to this message with your *Transaction ID* (or payment reference ID)."
+        "After making the transfer, please reply to this message with the **Name of the Account** you transferred from:"
     )
     await query.message.reply_text(
         payment_instruction,
         parse_mode="Markdown",
         reply_markup=get_reply_keyboard()
     )
-    context.chat_data["current_state"] = "TRANSACTION_ID"
-    return TRANSACTION_ID
+    context.chat_data["current_state"] = "PAYMENT_SENDER_NAME"
+    return PAYMENT_SENDER_NAME
 
 
-async def get_transaction_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    transaction_id = update.message.text.strip()
-    if not transaction_id or len(transaction_id) < 4 or len(transaction_id) > 64:
+async def get_payment_sender_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    sender_name = update.message.text.strip()
+    if not sender_name or len(sender_name) < 2:
         await update.message.reply_text(
-            "⚠️ Please send a valid Transaction ID (4–64 characters):",
+            "⚠️ Please send a valid account name (at least 2 characters):",
             reply_markup=get_reply_keyboard(),
         )
-        return TRANSACTION_ID
+        return PAYMENT_SENDER_NAME
 
     order_data = context.user_data.get(ORDER_DRAFT_KEY)
     if not order_data:
@@ -735,7 +770,45 @@ async def get_transaction_id(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return ConversationHandler.END
 
-    order_data["transaction_id"] = transaction_id
+    order_data["payment_sender_name"] = sender_name
+
+    await update.message.reply_text(
+        "Please enter the **Amount** you transferred:",
+        reply_markup=get_reply_keyboard(),
+    )
+    context.chat_data["current_state"] = "PAYMENT_AMOUNT"
+    return PAYMENT_AMOUNT
+
+
+async def get_payment_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    amount_text = update.message.text.strip()
+    # Clean the amount to check if it's a number
+    cleaned = "".join(ch for ch in amount_text if ch.isdigit() or ch == ".")
+    if not cleaned:
+        await update.message.reply_text(
+            "⚠️ Please send a valid amount as a number:",
+            reply_markup=get_reply_keyboard(),
+        )
+        return PAYMENT_AMOUNT
+
+    try:
+        transfer_amount = float(cleaned)
+    except ValueError:
+        await update.message.reply_text(
+            "⚠️ Please send a valid amount as a number:",
+            reply_markup=get_reply_keyboard(),
+        )
+        return PAYMENT_AMOUNT
+
+    order_data = context.user_data.get(ORDER_DRAFT_KEY)
+    if not order_data:
+        await update.message.reply_text(
+            "⚠️ No active order found. Please start again.",
+            reply_markup=get_reply_keyboard(),
+        )
+        return ConversationHandler.END
+
+    order_data["payment_amount"] = transfer_amount
 
     created_at = datetime.utcnow().isoformat()
     payload = {
@@ -754,7 +827,8 @@ async def get_transaction_id(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "price": order_data.get("unit_price"),
         "total_price": order_data.get("total_price"),
         "delivery_window": order_data.get("delivery_window"),
-        "transaction_id": transaction_id,
+        "payment_sender_name": order_data.get("payment_sender_name"),
+        "payment_amount": transfer_amount,
         "status": "New",
     }
 
@@ -801,11 +875,12 @@ async def get_transaction_id(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f"Total: {_format_naira(payload.get('total_price'))}\n"
                 f"Location: {payload.get('hall')} / {payload.get('room_number')}\n"
                 f"Time: {payload.get('delivery_window')}\n"
-                f"Transaction ID: {transaction_id}\n"
+                f"Paid From Account: {payload.get('payment_sender_name')}\n"
+                f"Amount Transferred: {_format_naira(transfer_amount)}\n"
                 f"Created: {payload.get('date_time')}"
             )
             await context.bot.send_message(chat_id=orders_group_chat_id, text=group_message)
-            logger.info(f"Posted order {order_id} with Transaction ID {transaction_id} to orders group chat_id={orders_group_chat_id}")
+            logger.info(f"Posted order {order_id} with payment details to orders group chat_id={orders_group_chat_id}")
         except ValueError:
             logger.error(
                 "ORDERS_GROUP_CHAT_ID must be an integer chat id; "
@@ -820,8 +895,8 @@ async def get_transaction_id(update: Update, context: ContextTypes.DEFAULT_TYPE)
         db.payments_collection.insert_one({
             "telegram_id": update.effective_user.id,
             "order_id": order_id,
-            "reference_id": transaction_id,
-            "amount": order_data.get("total_price"),
+            "sender_account_name": order_data.get("payment_sender_name"),
+            "amount": transfer_amount,
             "paid": False,
             "created_at": datetime.utcnow().isoformat()
         })
@@ -1079,6 +1154,7 @@ def get_buyer_conversation():
             MessageHandler(filters.Regex(r"^Browse Products$"), start_place_order),
             CallbackQueryHandler(start_buyer_flow, pattern=r"^start_buyer$"),
             CallbackQueryHandler(start_place_order, pattern=r"^placeorder$"),
+            CallbackQueryHandler(noop_callback, pattern=r"^noop$"),
             CommandHandler("debugstate", debug_state),
             CommandHandler("viewcart", view_cart),
             CommandHandler("payforproducts", pay_for_products),
@@ -1128,8 +1204,11 @@ def get_buyer_conversation():
                 CallbackQueryHandler(confirm_order, pattern=r"^order_confirm$"),
                 CallbackQueryHandler(cancel_order, pattern=r"^order_cancel$"),
             ],
-            TRANSACTION_ID: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, get_transaction_id),
+            PAYMENT_SENDER_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_payment_sender_name),
+            ],
+            PAYMENT_AMOUNT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_payment_amount),
             ]
         },
 
