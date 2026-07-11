@@ -639,8 +639,7 @@ async def _show_products_legacy(update: Update, context: ContextTypes.DEFAULT_TY
 async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    current_message_id = getattr(query.message, "message_id", None)
-    await _clear_ui_messages(update, context, preserve_message_ids=[current_message_id] if current_message_id is not None else [])
+    await _clear_ui_messages(update, context)
 
     raw_data = query.data or ""
     submenu = None
@@ -672,8 +671,10 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
         markup = _build_mr_dough_submenu_keyboard()
         try:
             await query.message.edit_text("Please choose a type of doughnut:", reply_markup=markup)
+            _remember_ui_message(context, query.message)
         except Exception:
-            await query.message.reply_text("Please choose a type of doughnut:", reply_markup=markup)
+            sent = await query.message.reply_text("Please choose a type of doughnut:", reply_markup=markup)
+            _remember_ui_message(context, sent)
         context.chat_data["current_state"] = "PRODUCT"
         return PRODUCT
 
@@ -1287,8 +1288,7 @@ async def show_brands(update: Update, context: ContextTypes.DEFAULT_TYPE, wipe_p
     msg = query.message if query else update.message
 
     if wipe_previous:
-        preserve = [getattr(msg, "message_id", None)] if query else []
-        await _clear_ui_messages(update, context, preserve_message_ids=preserve)
+        await _clear_ui_messages(update, context)
 
     brands = _collect_available_brands()
     if not brands:
@@ -1304,17 +1304,23 @@ async def show_brands(update: Update, context: ContextTypes.DEFAULT_TYPE, wipe_p
     keyboard = [[InlineKeyboardButton(brand_name, callback_data=f"brand::{brand_name}")] for brand_name in brands]
     markup = InlineKeyboardMarkup(keyboard)
 
-    if query:
+    if query and not wipe_previous:
         try:
             await query.answer()
         except Exception:
             pass
         try:
             await msg.edit_text("Choose a brand:", reply_markup=markup)
+            _remember_ui_message(context, msg)
         except Exception:
             sent = await msg.reply_text("Choose a brand:", reply_markup=markup)
             _remember_ui_message(context, sent)
     else:
+        if query:
+            try:
+                await query.answer()
+            except Exception:
+                pass
         sent = await msg.reply_text("Choose a brand:", reply_markup=markup)
         _remember_ui_message(context, sent)
 
@@ -1333,6 +1339,7 @@ async def _render_products_list(message, context, products, heading, back_callba
                 f"ℹ️ No products found for {heading}.",
                 reply_markup=markup,
             )
+            _remember_ui_message(context, message)
         except Exception:
             sent = await message.reply_text(
                 f"ℹ️ No products found for {heading}.",
@@ -1343,6 +1350,7 @@ async def _render_products_list(message, context, products, heading, back_callba
 
     try:
         await message.edit_text(f"🛒 {heading}")
+        _remember_ui_message(context, message)
     except Exception:
         pass
 
@@ -1382,7 +1390,6 @@ async def _render_products_list(message, context, products, heading, back_callba
 
 async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    current_message_id = getattr(query.message, "message_id", None) if query else None
     if query:
         try:
             await query.answer(text="Opening buyer flow...")
@@ -1391,22 +1398,22 @@ async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.answer()
             except Exception:
                 logger.exception("Failed to answer callback_query")
-        try:
-            await query.message.edit_text("🔄 Starting buyer flow...")
-        except Exception:
-            pass
 
     msg = query.message if query else update.message
 
     logger.info(f"start_buyer_flow triggered for user {update.effective_user.id}")
 
+    if query:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+    await _clear_ui_messages(update, context)
     context.user_data.clear()
     context.chat_data.clear()
     context.user_data.pop("awaiting_payment_ref", None)
     context.chat_data["conversation_active"] = True
-
-    if query:
-        await _clear_ui_messages(update, context, preserve_message_ids=[current_message_id] if current_message_id is not None else [])
 
     try:
         existing = db.buyers_collection.find_one({"telegram_id": update.effective_user.id})
@@ -1457,7 +1464,7 @@ async def back_to_brands(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer()
         except Exception:
             pass
-        await _clear_ui_messages(update, context, preserve_message_ids=[getattr(query.message, "message_id", None)])
+    await _clear_ui_messages(update, context)
     return await show_brands(update, context, wipe_previous=True)
 
 
