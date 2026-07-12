@@ -26,9 +26,9 @@ MR_DOUGH_SUBMENUS = {
         "label": "Vanilla Custard Doughnut",
         "category": "Vanilla Custard Doughnut",
     },
-    "milky": {
-        "label": "Milky Doughnut",
-        "category": "Milky Doughnut",
+    "Milk Flavored": {
+        "label": "Milk Flavored Doughnut",
+        "category": "Milk Flavored Doughnut",
     },
 }
 
@@ -184,7 +184,7 @@ def _collect_available_brands():
         brand_name = _extract_brand_name(seller)
         normalized = _normalize_text(brand_name)
         if brand_name and normalized not in seen:
-            if normalized in {"vanilla custard doughnut", "milky doughnut"}:
+            if normalized in {"vanilla custard doughnut", "Milk Flavored doughnut"}:
                 continue
             seen.add(normalized)
             brand_names.append(brand_name)
@@ -193,7 +193,7 @@ def _collect_available_brands():
         brand_name = _extract_brand_name(product)
         normalized = _normalize_text(brand_name)
         if brand_name and normalized not in seen:
-            if normalized in {"vanilla custard doughnut", "milky doughnut"}:
+            if normalized in {"vanilla custard doughnut", "Milk Flavored doughnut"}:
                 continue
             seen.add(normalized)
             brand_names.append(brand_name)
@@ -216,7 +216,7 @@ def _products_for_brand(brand_name):
 def _build_mr_dough_submenu_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(MR_DOUGH_SUBMENUS["vanilla"]["label"], callback_data="mr_dough_submenu::vanilla")],
-        [InlineKeyboardButton(MR_DOUGH_SUBMENUS["milky"]["label"], callback_data="mr_dough_submenu::milky")],
+        [InlineKeyboardButton(MR_DOUGH_SUBMENUS["Milk Flavored"]["label"], callback_data="mr_dough_submenu::Milk Flavored")],
         [InlineKeyboardButton("⬅ Back", callback_data="nav::back_to_brands")],
     ])
 
@@ -607,7 +607,7 @@ async def _show_products_legacy(update: Update, context: ContextTypes.DEFAULT_TY
     if _normalize_text(selected_brand) == "mr. dough":
         keyboard = [
             [InlineKeyboardButton("Vanilla Custard Doughnut", callback_data="brand::Vanilla Custard Doughnut")],
-            [InlineKeyboardButton("Milky Doughnut", callback_data="brand::Milky Doughnut")],
+            [InlineKeyboardButton("Milk Flavored Doughnut", callback_data="brand::Milk Flavored Doughnut")],
             [InlineKeyboardButton("⬅ Back", callback_data="nav::back_to_brands")]
         ]
         markup = InlineKeyboardMarkup(keyboard)
@@ -622,9 +622,9 @@ async def _show_products_legacy(update: Update, context: ContextTypes.DEFAULT_TY
 
     context.chat_data["current_state"] = "PRODUCT"
 
-    # If the sub-brand is Vanilla Custard or Milky, going back should return to Mr. Dough selection
+    # If the sub-brand is Vanilla Custard or Milk Flavored, going back should return to Mr. Dough selection
     back_cb = "nav::back_to_brands"
-    if _normalize_text(selected_brand) in {"vanilla custard doughnut", "milky doughnut"}:
+    if _normalize_text(selected_brand) in {"vanilla custard doughnut", "Milk Flavored doughnut"}:
         back_cb = "brand::Mr. Dough"
 
     return await _render_products_list(
@@ -682,7 +682,7 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.chat_data["current_state"] = "PRODUCT"
 
     back_cb = "nav::back_to_brands"
-    if _normalize_text(selected_brand) in {"vanilla custard doughnut", "milky doughnut"}:
+    if _normalize_text(selected_brand) in {"vanilla custard doughnut", "Milk Flavored doughnut"}:
         back_cb = "brand::Mr. Dough"
 
     return await _render_products_list(
