@@ -535,6 +535,10 @@ async def start_place_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data.pop("awaiting_payment_ref", None)
     context.user_data.pop(ORDER_DRAFT_KEY, None)
+    context.user_data.pop("order_details", None)
+    context.user_data.pop("total_price", None)
+    context.user_data.pop("payment_sender_name", None)
+    context.user_data.pop("delivery_window", None)
     return await show_brands(update, context)
 
 
