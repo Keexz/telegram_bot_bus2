@@ -970,15 +970,28 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_reply_markup(reply_markup=None)
     except Exception:
         logger.exception("Failed to remove confirm/cancel buttons for order")
-    order_data = context.user_data.get(ORDER_DRAFT_KEY)
-    if not order_data:
+    
+    order_details = context.user_data.get("order_details")
+    if not order_details:
         await query.message.reply_text(
             "⚠️ No active order found.",
             reply_markup=get_reply_keyboard(),
         )
         return ConversationHandler.END
-
-    total_price_formatted = _format_naira(order_data.get("total_price"))
+    
+    # Calculate total price for all products
+    total_price = 0
+    for detail in order_details:
+        product = _find_product_record(detail.get("product_id"))
+        if product:
+            total_price += _extract_product_price(product)
+            
+    # For now, let's assume quantity is 1 per product since the new flow doesn't explicitly ask for it
+    # We might need to ask for quantity in the future if needed
+    
+    context.user_data["total_price"] = total_price
+    
+    total_price_formatted = _format_naira(total_price)
     payment_instruction = (
         f"💸 Please transfer the total amount of *{total_price_formatted}* to complete your order:\n\n"
         f"🏦 *Bank Name:* {BANK_NAME}\n"
@@ -993,6 +1006,7 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     context.chat_data["current_state"] = "PAYMENT_SENDER_NAME"
     return PAYMENT_SENDER_NAME
+
 
 
 async def get_payment_sender_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
