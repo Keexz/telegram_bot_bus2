@@ -933,16 +933,24 @@ async def choose_delivery_time(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
     delivery_window = query.data.replace("delivery::", "")
 
-    order_data = context.user_data.get(ORDER_DRAFT_KEY)
-    if not order_data:
+    # Multi-product order logic: use order_details instead of ORDER_DRAFT_KEY
+    order_details = context.user_data.get("order_details")
+    if not order_details:
         await query.message.reply_text(
-            "⚠️ No active order. Tap 'Order this' again.",
+            "⚠️ No active order. Please start again.",
             reply_markup=get_reply_keyboard(),
         )
         return ConversationHandler.END
 
-    order_data["delivery_window"] = delivery_window
-    summary = _build_order_summary(order_data)
+    # Store delivery window in a way that confirm_order can find it
+    context.user_data["delivery_window"] = delivery_window
+    
+    # Build summary for all products
+    summary = "Order summary:\n"
+    for detail in order_details:
+        summary += f"– {detail['product_name']} at {detail['hall']}, Room {detail['room_number']}\n"
+    summary += f"– Time: {delivery_window}\nConfirm?"
+
     markup = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("Confirm", callback_data="order_confirm"),
@@ -952,6 +960,7 @@ async def choose_delivery_time(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.message.reply_text(summary, reply_markup=markup)
     context.chat_data["current_state"] = "ORDER_CONFIRM"
     return ORDER_CONFIRM
+
 
 
 async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
