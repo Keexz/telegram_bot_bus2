@@ -348,7 +348,7 @@ async def _check_active_order(update: Update, context: ContextTypes.DEFAULT_TYPE
     return False
 
 async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # This is a full reset entry point
+    # This acts like /start: wipe everything and show role selection
     query = update.callback_query
     
     if query:
@@ -359,38 +359,20 @@ async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = query.message if query else update.message
 
-    logger.info(f"start_buyer_flow triggered for user {update.effective_user.id}")
-
-    # Explicitly clear everything related to the current session
+    # Wipe conversation-specific data
     await _clear_ui_messages(update, context)
     context.user_data.clear()
     context.chat_data.clear()
     
-    # Re-initialize only what's necessary
+    # Re-initialize
     context.chat_data["conversation_active"] = True
 
-    try:
-        existing = db.buyers_collection.find_one({"telegram_id": update.effective_user.id})
-    except Exception:
-        logger.exception("DB lookup failed in start_buyer_flow")
-        await msg.reply_text(
-            "❌ An internal error occurred. Please try again later.",
-            reply_markup=get_reply_keyboard(),
-        )
-        return ConversationHandler.END
-
-    if existing:
-        await msg.reply_text(
-            f"👋 Hi {update.effective_user.first_name or 'there'} — welcome back!",
-            reply_markup=get_reply_keyboard(),
-        )
-        return await show_brands(update, context, wipe_previous=True)
-
-    await msg.reply_text(
-        "🛒 Welcome! Buyer registration — please enter your email address:",
-        reply_markup=get_reply_keyboard(),
-    )
-    return EMAIL
+    # Show the role selection menu (same as /start)
+    keyboard = [[InlineKeyboardButton("🛒 I'm a Buyer", callback_data="start_buyer")]]
+    markup = InlineKeyboardMarkup(keyboard)
+    await msg.reply_text("👋 Welcome! Choose a role to continue:", reply_markup=markup)
+    
+    return ConversationHandler.END
 
 
 async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1446,75 +1428,6 @@ async def _render_products_list(message, context, products, heading, back_callba
     )
     _remember_ui_message(context, sent)
     return PRODUCT
-
-
-async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    if query:
-        try:
-            await query.answer(text="Opening buyer flow...")
-        except Exception:
-            try:
-                await query.answer()
-            except Exception:
-                logger.exception("Failed to answer callback_query")
-
-    msg = query.message if query else update.message
-
-    logger.info(f"start_buyer_flow triggered for user {update.effective_user.id}")
-
-    if query:
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
-
-    await _clear_ui_messages(update, context)
-    context.user_data.clear()
-    context.chat_data.clear()
-    context.user_data.pop("awaiting_payment_ref", None)
-    context.chat_data["conversation_active"] = True
-
-    try:
-        existing = db.buyers_collection.find_one({"telegram_id": update.effective_user.id})
-    except Exception:
-        logger.exception("DB lookup failed in start_buyer_flow")
-        await msg.reply_text(
-            "❌ An internal error occurred. Please try again later.",
-            reply_markup=get_reply_keyboard(),
-        )
-        return ConversationHandler.END
-
-    if existing:
-        if query:
-            try:
-                await msg.edit_text(f"👋 Hi {update.effective_user.first_name or 'there'}")
-            except Exception:
-                await msg.reply_text(
-                    f"👋 Hi {update.effective_user.first_name or 'there'}",
-                    reply_markup=get_reply_keyboard(),
-                )
-        else:
-            await msg.reply_text(
-                f"👋 Hi {update.effective_user.first_name or 'there'}",
-                reply_markup=get_reply_keyboard(),
-            )
-        return await show_brands(update, context, wipe_previous=True)
-
-    if query:
-        try:
-            await msg.edit_text("🛍️ Buyer registration — please enter your email address:")
-        except Exception:
-            await msg.reply_text(
-                "🛍️ Buyer registration — please enter your email address:",
-                reply_markup=get_reply_keyboard(),
-            )
-    else:
-        await msg.reply_text(
-            "🛍️ Buyer registration — please enter your email address:",
-            reply_markup=get_reply_keyboard(),
-        )
-    return EMAIL
 
 
 async def back_to_brands(update: Update, context: ContextTypes.DEFAULT_TYPE):
