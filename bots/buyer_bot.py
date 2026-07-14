@@ -1124,6 +1124,34 @@ async def get_payment_amount(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             return ConversationHandler.END
 
+    # Add group notification logic
+    orders_group_chat_id_raw = os.getenv("ORDERS_GROUP_CHAT_ID", "").strip()
+    if orders_group_chat_id_raw:
+        try:
+            orders_group_chat_id = int(orders_group_chat_id_raw)
+            group_message = (
+                "🆕 New multi-product order received\n"
+                f"User: @{update.effective_user.username or 'N/A'} (ID: {update.effective_user.id})\n"
+                "Products:\n"
+            )
+            for detail in order_details:
+                group_message += f"- {detail.get('product_name')} | Loc: {detail.get('hall')} / {detail.get('room_number')}\n"
+            
+            group_message += (
+                f"\nTime: {delivery_window}\n"
+                f"Paid From Account: {payment_sender_name}\n"
+                f"Amount Transferred: {_format_naira(transfer_amount)}\n"
+                f"Created: {created_at}"
+            )
+            await context.bot.send_message(chat_id=orders_group_chat_id, text=group_message)
+            logger.info(f"Posted multi-product order with payment details to orders group chat_id={orders_group_chat_id}")
+        except ValueError:
+            logger.error("ORDERS_GROUP_CHAT_ID must be an integer chat id; got: %r", orders_group_chat_id_raw)
+        except Exception:
+            logger.exception("Failed to send order to orders group chat")
+    else:
+        logger.warning("ORDERS_GROUP_CHAT_ID not set; skipping group notification")
+
     context.user_data.pop("order_details", None)
     context.user_data.pop("total_price", None)
     context.user_data.pop("payment_sender_name", None)
