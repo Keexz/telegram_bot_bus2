@@ -625,6 +625,7 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _clear_ui_messages(update, context)
 
     raw_data = query.data or ""
+    logger.info(f"show_products triggered with data: {raw_data}")
     submenu = None
 
     if raw_data.startswith("mr_dough_submenu::"):
@@ -646,6 +647,7 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         # Send photo
         image_path = os.path.join(os.path.dirname(__file__), '..', 'photo_2026-07-14_17-56-03.jpg')
+        logger.info(f"Attempting to open image: {image_path}")
         with open(image_path, "rb") as photo:
             await query.message.reply_photo(
                 photo=photo,
@@ -658,6 +660,7 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
     selected_brand = raw_data.replace("brand::", "")
+    logger.info(f"Selected brand: {selected_brand}")
     context.user_data["selected_brand"] = selected_brand
 
     if _normalize_text(selected_brand) == _normalize_text(MR_DOUGH_NAME):
@@ -672,6 +675,7 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return PRODUCT
 
     products = _products_for_brand(selected_brand)
+    logger.info(f"Products found: {len(products)}")
     context.chat_data["current_state"] = "PRODUCT"
 
     back_cb = "nav::back_to_brands"
