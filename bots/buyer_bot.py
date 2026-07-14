@@ -340,32 +340,25 @@ def _generate_delivery_message(window_label):
 async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     current_message_id = getattr(query.message, "message_id", None) if query else None
+    
+    # Acknowledge the query
     if query:
-        # acknowledge the callback to remove loading indicator and give feedback
         try:
-            await query.answer(text="Opening buyer flow...")
+            await query.answer()
         except Exception:
-            # fallback to a plain answer if the text answer fails
-            try:
-                await query.answer()
-            except Exception:
-                logger.exception("Failed to answer callback_query")
-        # attempt to edit the originating message to show immediate feedback
-        try:
-            await query.message.edit_text("🔄 Starting buyer flow...")
-        except Exception:
-            # ignore if message cannot be edited (e.g., old messages or channels)
             pass
 
     msg = query.message if query else update.message
 
     logger.info(f"start_buyer_flow triggered for user {update.effective_user.id}")
 
+    # Wipe conversation-specific data
+    await _clear_ui_messages(update, context)
     context.user_data.clear()
     context.chat_data.clear()
-    context.user_data.pop("awaiting_payment_ref", None)
     context.chat_data["conversation_active"] = True
 
+    # Check for existing user registration
     try:
         existing = db.buyers_collection.find_one({"telegram_id": update.effective_user.id})
     except Exception:
@@ -377,32 +370,18 @@ async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     if existing:
+        # User is registered, welcome them and show brands directly
         await msg.reply_text(
-            f"👋 Hi {update.effective_user.first_name or 'there'}",
+            f"👋 Hi {update.effective_user.first_name or 'there'} — welcome back!",
             reply_markup=get_reply_keyboard(),
         )
-        if query:
-            await _clear_ui_messages(update, context, preserve_message_ids=[current_message_id] if current_message_id is not None else [])
         return await show_brands(update, context, wipe_previous=True)
 
+    # User not registered, start registration
     await msg.reply_text(
-        "🛒 Buyer registration — please enter your email address:",
+        "🛒 Welcome! Buyer registration — please enter your email address:",
         reply_markup=get_reply_keyboard(),
     )
-    if query:
-        await _clear_ui_messages(update, context, preserve_message_ids=[current_message_id] if current_message_id is not None else [])
-        try:
-            await msg.edit_text("🛍️ Buyer registration — please enter your email address:")
-        except Exception:
-            await msg.reply_text(
-                "🛍️ Buyer registration — please enter your email address:",
-                reply_markup=get_reply_keyboard(),
-            )
-    else:
-        await msg.reply_text(
-            "🛍️ Buyer registration — please enter your email address:",
-            reply_markup=get_reply_keyboard(),
-        )
     return EMAIL
 
 
