@@ -708,11 +708,19 @@ async def handle_product_type_selection(update: Update, context: ContextTypes.DE
     brand = context.user_data.get("selected_brand")
     all_brand_products = _products_for_brand(brand)
     
+    # Mapping for keywords to product keywords
+    keyword_map = {
+        "single": "single",
+        "duo": "pack of 3",
+        "triple": "pack of 3"
+    }
+    
     for part in parts:
         found = False
+        search_term = keyword_map.get(part, part)
         for p in all_brand_products:
             p_name = _normalize_text(_extract_product_name(p))
-            if part in p_name:
+            if search_term in p_name:
                 selected_products.append(p)
                 found = True
                 break
