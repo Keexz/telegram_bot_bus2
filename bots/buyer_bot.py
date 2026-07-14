@@ -662,7 +662,8 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
             
         # Send photo
-        with open("photo_2026-07-14_17-56-03.jpg", "rb") as photo:
+        image_path = os.path.join(os.path.dirname(__file__), '..', 'photo_2026-07-14_17-56-03.jpg')
+        with open(image_path, "rb") as photo:
             await query.message.reply_photo(
                 photo=photo,
                 caption="Please choose your product option: single, duo, or triple.",
