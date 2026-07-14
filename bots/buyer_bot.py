@@ -889,7 +889,11 @@ async def get_order_hall(update: Update, context: ContextTypes.DEFAULT_TYPE):
     product = selected_products[product_index]
     
     order_details = context.user_data.get("order_details", [])
-    order_details.append({"hall": hall, "product_name": _extract_product_name(product)})
+    order_details.append({
+        "hall": hall, 
+        "product_name": _extract_product_name(product),
+        "product_id": str(product.get("_id") or product.get("id"))
+    })
     context.user_data["order_details"] = order_details
     
     await update.message.reply_text(f"What is the room number for {_extract_product_name(product)}?")
@@ -1018,15 +1022,16 @@ async def get_payment_sender_name(update: Update, context: ContextTypes.DEFAULT_
         )
         return PAYMENT_SENDER_NAME
 
-    order_data = context.user_data.get(ORDER_DRAFT_KEY)
-    if not order_data:
+    order_details = context.user_data.get("order_details")
+    if not order_details:
         await update.message.reply_text(
             "⚠️ No active order found. Please start again.",
             reply_markup=get_reply_keyboard(),
         )
         return ConversationHandler.END
 
-    order_data["payment_sender_name"] = sender_name
+    # Store in context.user_data directly for now
+    context.user_data["payment_sender_name"] = sender_name
 
     await update.message.reply_text(
         "Please enter the **Amount** you transferred:",
@@ -1056,116 +1061,77 @@ async def get_payment_amount(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return PAYMENT_AMOUNT
 
-    order_data = context.user_data.get(ORDER_DRAFT_KEY)
-    if not order_data:
+    order_details = context.user_data.get("order_details")
+    if not order_details:
         await update.message.reply_text(
             "⚠️ No active order found. Please start again.",
             reply_markup=get_reply_keyboard(),
         )
         return ConversationHandler.END
 
-    order_data["payment_amount"] = transfer_amount
+    total_price = context.user_data.get("total_price", 0)
+    
+    # Simple validation: transfer amount should be close to total price
+    if abs(transfer_amount - total_price) > 100: # Allow small discrepancy
+        await update.message.reply_text(
+            f"⚠️ The amount transferred (₦{transfer_amount}) does not match the total order amount (₦{total_price}). Please check and try again.",
+            reply_markup=get_reply_keyboard(),
+        )
+        return PAYMENT_AMOUNT
+    
+    payment_sender_name = context.user_data.get("payment_sender_name")
+    delivery_window = context.user_data.get("delivery_window")
 
     created_at = datetime.utcnow().isoformat()
-    payload = {
-        "date_time": created_at,
-        "student_name": order_data.get("student_name"),
-        "telegram_username": update.effective_user.username,
-        "telegram_id": update.effective_user.id,
-        "hall": order_data.get("hall"),
-        "room_number": order_data.get("room_number"),
-        "hall_room": f"{order_data.get('hall')} / {order_data.get('room_number')}",
-        "product_sku": order_data.get("product_sku"),
-        "product_id": order_data.get("product_id"),
-        "product_name": order_data.get("product_name"),
-        "brand": order_data.get("brand"),
-        "quantity": order_data.get("quantity"),
-        "price": order_data.get("unit_price"),
-        "total_price": order_data.get("total_price"),
-        "delivery_window": order_data.get("delivery_window"),
-        "payment_sender_name": order_data.get("payment_sender_name"),
-        "payment_amount": transfer_amount,
-        "status": "New",
-    }
+    
+    # Process each order detail
+    for detail in order_details:
+        product = _find_product_record(detail.get("product_id"))
+        
+        payload = {
+            "date_time": created_at,
+            "telegram_username": update.effective_user.username,
+            "telegram_id": update.effective_user.id,
+            "hall": detail.get("hall"),
+            "room_number": detail.get("room_number"),
+            "hall_room": f"{detail.get('hall')} / {detail.get('room_number')}",
+            "product_id": detail.get("product_id"),
+            "product_name": detail.get("product_name"),
+            "price": _extract_product_price(product) if product else 0,
+            "delivery_window": delivery_window,
+            "payment_sender_name": payment_sender_name,
+            "payment_amount": transfer_amount,
+            "status": "New",
+        }
 
-    try:
-        result = db.reserve_stock_and_insert_order(
-            order_data.get("product_id"),
-            int(order_data.get("quantity") or 0),
-            payload,
-        )
-        order_id = result.order_id
-        payload["order_id"] = order_id
-    except db.StockReservationError as exc:
-        if exc.reason in {"missing", "out_of_stock"} or exc.available_stock <= 0:
-            message = f"Sorry, {exc.product_name} is out of stock right now."
-        else:
-            message = f"Only {exc.available_stock} left for {exc.product_name}. Please start the order again with a lower quantity."
-        await update.message.reply_text(
-            message,
-            reply_markup=get_reply_keyboard(),
-        )
-        context.user_data.pop(ORDER_DRAFT_KEY, None)
-        context.chat_data["current_state"] = "PRODUCT"
-        return PRODUCT
-    except Exception:
-        logger.exception("Failed to save order")
-        await update.message.reply_text(
-            "❌ Could not save your order right now. Please try again.",
-            reply_markup=get_reply_keyboard(),
-        )
-        context.user_data.pop(ORDER_DRAFT_KEY, None)
-        return ConversationHandler.END
-
-    orders_group_chat_id_raw = os.getenv("ORDERS_GROUP_CHAT_ID", "").strip()
-    if orders_group_chat_id_raw:
         try:
-            orders_group_chat_id = int(orders_group_chat_id_raw)
-            group_message = (
-                "🆕 New order received\n"
-                f"ID: {order_id}\n"
-                f"Student: {payload.get('student_name') or 'N/A'}\n"
-                f"User: @{payload.get('telegram_username') or 'N/A'} (ID: {payload.get('telegram_id')})\n"
-                f"Product: {payload.get('product_name')}\n"
-                f"Qty: {payload.get('quantity')}\n"
-                f"Total: {_format_naira(payload.get('total_price'))}\n"
-                f"Location: {payload.get('hall')} / {payload.get('room_number')}\n"
-                f"Time: {payload.get('delivery_window')}\n"
-                f"Paid From Account: {payload.get('payment_sender_name')}\n"
-                f"Amount Transferred: {_format_naira(transfer_amount)}\n"
-                f"Created: {payload.get('date_time')}"
-            )
-            await context.bot.send_message(chat_id=orders_group_chat_id, text=group_message)
-            logger.info(f"Posted order {order_id} with payment details to orders group chat_id={orders_group_chat_id}")
-        except ValueError:
-            logger.error(
-                "ORDERS_GROUP_CHAT_ID must be an integer chat id; "
-                f"got: {orders_group_chat_id_raw!r}"
+            # Need to decide how to handle multiple product stock reservation
+            # For now, replicate existing single-product logic
+            db.reserve_stock_and_insert_order(
+                detail.get("product_id"),
+                1, # Assuming 1 for now
+                payload,
             )
         except Exception:
-            logger.exception("Failed to send order to orders group chat")
-    else:
-        logger.warning("ORDERS_GROUP_CHAT_ID not set; skipping group notification")
+            logger.exception("Failed to save order detail")
+            await update.message.reply_text(
+                f"❌ Could not save order for {detail.get('product_name')}. Please try again.",
+                reply_markup=get_reply_keyboard(),
+            )
+            return ConversationHandler.END
 
-    try:
-        db.payments_collection.insert_one({
-            "telegram_id": update.effective_user.id,
-            "order_id": order_id,
-            "sender_account_name": order_data.get("payment_sender_name"),
-            "amount": transfer_amount,
-            "paid": False,
-            "created_at": datetime.utcnow().isoformat()
-        })
-    except Exception:
-        logger.exception("Failed to save payment record (non-blocking)")
-
-    context.user_data.pop(ORDER_DRAFT_KEY, None)
+    context.user_data.pop("order_details", None)
+    context.user_data.pop("total_price", None)
+    context.user_data.pop("payment_sender_name", None)
+    context.user_data.pop("delivery_window", None)
+    
     context.chat_data["current_state"] = None
     await update.message.reply_text(
-        f"Thank you. Your order (ID: {order_id}) has been received. We will deliver between {_generate_delivery_message(order_data.get('delivery_window', 'the selected time window'))}.",
+        f"Thank you. Your order has been received.",
         reply_markup=get_reply_keyboard(),
     )
     return ConversationHandler.END
+
 
 
 async def cancel_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
