@@ -12,7 +12,7 @@ from utils.logger import logger
 from utils.menu import get_reply_keyboard
 
 # Conversation states
-EMAIL, PHONE, BRAND, PRODUCT, ORDER_QUANTITY, ORDER_NAME, ORDER_HALL, ORDER_ROOM, DELIVERY_TIME, ORDER_CONFIRM, PAYMENT_SENDER_NAME, PAYMENT_AMOUNT = range(12)
+EMAIL, PHONE, BRAND, PRODUCT, PRODUCT_TYPE_SELECT, ORDER_QUANTITY, ORDER_NAME, ORDER_HALL, ORDER_ROOM, DELIVERY_TIME, ORDER_CONFIRM, PAYMENT_SENDER_NAME, PAYMENT_AMOUNT = range(13)
 PAYMENT_REF_STATE = "PAYMENT_REF"
 ORDER_DRAFT_KEY = "pending_order"
 UI_MESSAGE_IDS_KEY = "ui_message_ids"
@@ -648,21 +648,30 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
         submenu = _resolve_mr_dough_submenu(raw_data)
         if not submenu:
             await query.message.reply_text(
-                "âŒ Unknown Mr. Dough option.",
+                "❌ Unknown Mr. Dough option.",
                 reply_markup=get_reply_keyboard(),
             )
             return PRODUCT
-        selected_brand = submenu["category"]
-        context.user_data["selected_brand"] = selected_brand
-        products = _products_for_brand(selected_brand)
-        context.chat_data["current_state"] = "PRODUCT"
-        return await _render_products_list(
-            query.message,
-            context,
-            products,
-            f"Products from {selected_brand}",
-            "brand::Mr. Dough",
-        )
+        
+        # New flow: Display image and ask for type
+        context.user_data["selected_brand"] = submenu["category"]
+        
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+            
+        # Send photo
+        with open("photo_2026-07-14_17-56-03.jpg", "rb") as photo:
+            await query.message.reply_photo(
+                photo=photo,
+                caption="Please choose your product option: single, duo, or triple.",
+                reply_markup=get_reply_keyboard()
+            )
+            
+        context.chat_data["current_state"] = "PRODUCT_TYPE_SELECT"
+        return PRODUCT_TYPE_SELECT
+
 
     selected_brand = raw_data.replace("brand::", "")
     context.user_data["selected_brand"] = selected_brand
@@ -692,6 +701,38 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Products from {selected_brand}",
         back_cb,
     )
+
+
+async def handle_product_type_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = _normalize_text(update.message.text)
+    
+    parts = [p.strip() for p in text.replace("and", ",").split(",") if p.strip()]
+    
+    selected_products = []
+    brand = context.user_data.get("selected_brand")
+    all_brand_products = _products_for_brand(brand)
+    
+    for part in parts:
+        found = False
+        for p in all_brand_products:
+            p_name = _normalize_text(_extract_product_name(p))
+            if part in p_name:
+                selected_products.append(p)
+                found = True
+                break
+        if not found:
+            await update.message.reply_text(f"Could not find product for '{part}'. Please try again with 'single', 'duo', or 'triple'.")
+            return PRODUCT_TYPE_SELECT
+
+    context.user_data["selected_products"] = selected_products
+    context.user_data["product_index"] = 0
+    context.user_data["order_details"] = []
+    
+    # Now ask for hall for the first product
+    product = selected_products[0]
+    await update.message.reply_text(f"Please enter the hall for {_extract_product_name(product)}:")
+    context.chat_data["current_state"] = "ORDER_HALL"
+    return ORDER_HALL
 
 
 # --------------------------
@@ -839,25 +880,18 @@ async def get_order_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_order_hall(update: Update, context: ContextTypes.DEFAULT_TYPE):
     hall = update.message.text.strip()
     if len(hall) < 2:
-        await update.message.reply_text(
-            "Please enter a valid hall.",
-            reply_markup=get_reply_keyboard(),
-        )
+        await update.message.reply_text("Please enter a valid hall.", reply_markup=get_reply_keyboard())
         return ORDER_HALL
 
-    order_data = context.user_data.get(ORDER_DRAFT_KEY)
-    if not order_data:
-        await update.message.reply_text(
-            "⚠️ No active order. Tap 'Order this' again.",
-            reply_markup=get_reply_keyboard(),
-        )
-        return ConversationHandler.END
-
-    order_data["hall"] = hall
-    await update.message.reply_text(
-        "What is your room number?",
-        reply_markup=get_reply_keyboard(),
-    )
+    product_index = context.user_data.get("product_index", 0)
+    selected_products = context.user_data.get("selected_products", [])
+    product = selected_products[product_index]
+    
+    order_details = context.user_data.get("order_details", [])
+    order_details.append({"hall": hall, "product_name": _extract_product_name(product)})
+    context.user_data["order_details"] = order_details
+    
+    await update.message.reply_text(f"What is the room number for {_extract_product_name(product)}?")
     context.chat_data["current_state"] = "ORDER_ROOM"
     return ORDER_ROOM
 
@@ -865,27 +899,32 @@ async def get_order_hall(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_order_room(update: Update, context: ContextTypes.DEFAULT_TYPE):
     room_number = update.message.text.strip()
     if len(room_number) < 1:
-        await update.message.reply_text(
-            "Please enter a valid room number.",
-            reply_markup=get_reply_keyboard(),
-        )
+        await update.message.reply_text("Please enter a valid room number.", reply_markup=get_reply_keyboard())
         return ORDER_ROOM
 
-    order_data = context.user_data.get(ORDER_DRAFT_KEY)
-    if not order_data:
+    product_index = context.user_data.get("product_index", 0)
+    order_details = context.user_data.get("order_details", [])
+    order_details[product_index]["room_number"] = room_number
+    context.user_data["order_details"] = order_details
+    
+    selected_products = context.user_data.get("selected_products", [])
+    
+    # Check if more products
+    if product_index + 1 < len(selected_products):
+        context.user_data["product_index"] = product_index + 1
+        product = selected_products[product_index + 1]
+        await update.message.reply_text(f"Please enter the hall for {_extract_product_name(product)}:")
+        context.chat_data["current_state"] = "ORDER_HALL"
+        return ORDER_HALL
+    else:
+        # Done, go to delivery time
         await update.message.reply_text(
-            "⚠️ No active order. Tap 'Order this' again.",
-            reply_markup=get_reply_keyboard(),
+            "Choose your preferred delivery time:",
+            reply_markup=_delivery_option_buttons(),
         )
-        return ConversationHandler.END
+        context.chat_data["current_state"] = "DELIVERY_TIME"
+        return DELIVERY_TIME
 
-    order_data["room_number"] = room_number
-    await update.message.reply_text(
-        "Choose your preferred delivery time:",
-        reply_markup=_delivery_option_buttons(),
-    )
-    context.chat_data["current_state"] = "DELIVERY_TIME"
-    return DELIVERY_TIME
 
 
 async def choose_delivery_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1569,6 +1608,9 @@ def get_buyer_conversation():
             ],
             ORDER_QUANTITY: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_order_quantity),
+            ],
+            PRODUCT_TYPE_SELECT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_product_type_selection),
             ],
             ORDER_NAME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_order_name),
