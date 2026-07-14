@@ -1430,6 +1430,61 @@ async def _render_products_list(message, context, products, heading, back_callba
     return PRODUCT
 
 
+async def process_buyer_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # This is the actual start of the flow after role selection
+    query = update.callback_query
+    msg = query.message if query else update.message
+    
+    if query:
+        try:
+            await query.answer()
+        except Exception:
+            pass
+
+    # Check for existing user registration
+    try:
+        existing = db.buyers_collection.find_one({"telegram_id": update.effective_user.id})
+    except Exception:
+        logger.exception("DB lookup failed in process_buyer_start")
+        await msg.reply_text(
+            "❌ An internal error occurred. Please try again later.",
+            reply_markup=get_reply_keyboard(),
+        )
+        return ConversationHandler.END
+
+    if existing:
+        if query:
+            try:
+                await msg.edit_text(f"👋 Hi {update.effective_user.first_name or 'there'} — welcome back!")
+            except Exception:
+                await msg.reply_text(
+                    f"👋 Hi {update.effective_user.first_name or 'there'} — welcome back!",
+                    reply_markup=get_reply_keyboard(),
+                )
+        else:
+            await msg.reply_text(
+                f"👋 Hi {update.effective_user.first_name or 'there'} — welcome back!",
+                reply_markup=get_reply_keyboard(),
+            )
+        return await show_brands(update, context, wipe_previous=True)
+
+    # User not registered
+    if query:
+        try:
+            await msg.edit_text("🛍️ Buyer registration — please enter your email address:")
+        except Exception:
+            await msg.reply_text(
+                "🛍️ Buyer registration — please enter your email address:",
+                reply_markup=get_reply_keyboard(),
+            )
+    else:
+        await msg.reply_text(
+            "🛍️ Buyer registration — please enter your email address:",
+            reply_markup=get_reply_keyboard(),
+        )
+    return EMAIL
+
+
 async def back_to_brands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     if query:
@@ -1503,7 +1558,7 @@ def get_buyer_conversation():
             CommandHandler("placeorder", start_place_order),
             CommandHandler("browseproducts", start_buyer_flow),
             MessageHandler(filters.Regex(r"^Browse Products$"), start_buyer_flow),
-            CallbackQueryHandler(start_buyer_flow, pattern=r"^start_buyer$"),
+            CallbackQueryHandler(process_buyer_start, pattern=r"^start_buyer$"),
             CallbackQueryHandler(start_place_order, pattern=r"^placeorder$"),
             CallbackQueryHandler(noop_callback, pattern=r"^noop$"),
             CallbackQueryHandler(show_products, pattern=r"^mr_dough_submenu::.+$"),
@@ -1516,18 +1571,18 @@ def get_buyer_conversation():
         states={
             EMAIL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_email),
-                CallbackQueryHandler(start_buyer_flow, pattern=r"^start_buyer$"),
+                CallbackQueryHandler(process_buyer_start, pattern=r"^start_buyer$"),
                 CallbackQueryHandler(start_place_order, pattern=r"^placeorder$")
             ],
             PHONE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone),
-                CallbackQueryHandler(start_buyer_flow, pattern=r"^start_buyer$"),
+                CallbackQueryHandler(process_buyer_start, pattern=r"^start_buyer$"),
                 CallbackQueryHandler(start_place_order, pattern=r"^placeorder$")
             ],
             BRAND: [
                 CallbackQueryHandler(show_products, pattern=r"^brand::.+$"),
                 CallbackQueryHandler(back_to_brands, pattern=r"^nav::back_to_brands$"),
-                CallbackQueryHandler(start_buyer_flow, pattern=r"^start_buyer$"),
+                CallbackQueryHandler(process_buyer_start, pattern=r"^start_buyer$"),
                 CallbackQueryHandler(start_place_order, pattern=r"^placeorder$"),
                 CallbackQueryHandler(show_products, pattern=r"^mr_dough_submenu::.+$"),
             ],
@@ -1536,7 +1591,7 @@ def get_buyer_conversation():
                 CallbackQueryHandler(start_order_for_product, pattern=r"^order::.+$"),
                 CallbackQueryHandler(show_products, pattern=r"^brand::.+$"),
                 CallbackQueryHandler(back_to_brands, pattern=r"^nav::back_to_brands$"),
-                CallbackQueryHandler(start_buyer_flow, pattern=r"^start_buyer$"),
+                CallbackQueryHandler(process_buyer_start, pattern=r"^start_buyer$"),
                 CallbackQueryHandler(start_place_order, pattern=r"^placeorder$"),
                 CallbackQueryHandler(show_products, pattern=r"^mr_dough_submenu::.+$"),
             ],
