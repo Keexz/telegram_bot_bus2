@@ -612,13 +612,20 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if _normalize_text(selected_brand) == _normalize_text(MR_DOUGH_NAME):
         markup = _build_mr_dough_submenu_keyboard()
         try:
-            await query.message.edit_text("Please choose a type of doughnut:", reply_markup=markup)
+            logger.info("Attempting to display Mr. Dough submenu...")
+            try:
+                await query.message.edit_text("Please choose a type of doughnut:", reply_markup=markup)
+            except Exception as e:
+                logger.warning(f"Could not edit message, falling back to reply: {e}")
+                await query.message.reply_text("Please choose a type of doughnut:", reply_markup=markup)
+            
             _remember_ui_message(context, query.message)
-        except Exception:
-            sent = await query.message.reply_text("Please choose a type of doughnut:", reply_markup=markup)
-            _remember_ui_message(context, sent)
-        context.chat_data["current_state"] = "PRODUCT"
-        return PRODUCT
+            context.chat_data["current_state"] = "PRODUCT"
+            return PRODUCT
+        except Exception as e:
+            logger.exception(f"Failed to show Mr. Dough submenu: {e}")
+            await query.message.reply_text("❌ An error occurred showing the menu. Please try again.")
+            return BRAND
 
     products = _products_for_brand(selected_brand)
     logger.info(f"Products found: {len(products)}")
