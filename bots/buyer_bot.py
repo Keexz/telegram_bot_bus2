@@ -348,33 +348,12 @@ async def _check_active_order(update: Update, context: ContextTypes.DEFAULT_TYPE
     return False
 
 async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # This acts like /start: wipe everything and show role selection
-    query = update.callback_query
-
-    if query:
-        try:
-            await query.answer()
-        except Exception:
-            pass
-
-    msg = query.message if query else update.message
-
-    # Wipe conversation-specific data
-    await _clear_ui_messages(update, context)
+    # Wipe conversation-specific data without sending "Cancelled" message
     context.user_data.clear()
     context.chat_data.clear()
 
-    # Re-initialize
-    context.chat_data["conversation_active"] = True
-
-    # Show the role selection menu (same as /start)
-    keyboard = [[InlineKeyboardButton("🛒 I'm a Buyer", callback_data="start_buyer")]]
-    markup = InlineKeyboardMarkup(keyboard)
-    await msg.reply_text("👋 Welcome! Choose a role to continue:", reply_markup=markup)
-
-    return ConversationHandler.END
-
-
+    # Directly proceed to the buyer start logic
+    return await process_buyer_start(update, context)
 async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     email = update.message.text.strip()
     if "@" not in email or "." not in email:
