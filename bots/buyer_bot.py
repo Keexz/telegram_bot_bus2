@@ -601,7 +601,7 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(image_path, "rb") as photo:
             await query.message.reply_photo(
                 photo=photo,
-                caption="Please choose your product option: single, duo, or trio.",
+                caption="Please choose your product option: single, duo, or trio. And you can choose two options(e.g. send single and duo)",
                 reply_markup=get_reply_keyboard()
             )
 
@@ -979,7 +979,7 @@ async def get_payment_sender_name(update: Update, context: ContextTypes.DEFAULT_
     context.user_data["payment_sender_name"] = sender_name
 
     await update.message.reply_text(
-        "Please enter the **Amount** you transferred:",
+        "Please enter the amount you transferred: (e.g. 2000)",
         reply_markup=get_reply_keyboard(),
     )
     context.chat_data["current_state"] = "PAYMENT_AMOUNT"
