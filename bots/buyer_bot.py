@@ -569,46 +569,6 @@ async def noop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
 
-async def _show_products_legacy(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    selected_brand = query.data.replace("brand::", "")
-    context.user_data["selected_brand"] = selected_brand
-
-    # If the user selected the main "Mr. Dough" brand, show the sub-brands/options
-    if _normalize_text(selected_brand) == "mr. dough":
-        keyboard = [
-            [InlineKeyboardButton("Vanilla Custard Doughnut", callback_data="brand::Vanilla Custard Doughnut")],
-            [InlineKeyboardButton("Milk Flavored Doughnut", callback_data="brand::Milk Flavored Doughnut")],
-            [InlineKeyboardButton("⬅ Back", callback_data="nav::back_to_brands")]
-        ]
-        markup = InlineKeyboardMarkup(keyboard)
-        try:
-            await query.message.edit_text("Please choose a type of doughnut:", reply_markup=markup)
-        except Exception:
-            await query.message.reply_text("Please choose a type of doughnut:", reply_markup=markup)
-        context.chat_data["current_state"] = "PRODUCT"
-        return PRODUCT
-
-    products = _products_for_brand(selected_brand)
-
-    context.chat_data["current_state"] = "PRODUCT"
-
-    # If the sub-brand is Vanilla Custard or Milk Flavored, going back should return to Mr. Dough selection
-    back_cb = "nav::back_to_brands"
-    if _normalize_text(selected_brand) in {"vanilla custard doughnut", "Milk Flavored doughnut"}:
-        back_cb = "brand::Mr. Dough"
-
-    return await _render_products_list(
-        query.message,
-        context,
-        products,
-        f"Products from {selected_brand}",
-        back_cb,
-    )
-
-
 async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
