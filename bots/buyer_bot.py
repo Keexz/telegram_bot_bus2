@@ -348,6 +348,10 @@ async def _check_active_order(update: Update, context: ContextTypes.DEFAULT_TYPE
     return False
 
 async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Check for active order first
+    if await _check_active_order(update, context):
+        return ConversationHandler.END
+
     # This acts like /start: wipe everything and directly trigger the buyer process
     query = update.callback_query
 
@@ -367,7 +371,6 @@ async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Directly proceed to the buyer start logic
     return await process_buyer_start(update, context)
-
 async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     email = update.message.text.strip()
     if "@" not in email or "." not in email:
