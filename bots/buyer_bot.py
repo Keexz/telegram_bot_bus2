@@ -655,12 +655,8 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if _normalize_text(selected_brand) == _normalize_text(MR_DOUGH_NAME):
         markup = _build_mr_dough_submenu_keyboard()
-        try:
-            await query.message.edit_text("Please choose a type of doughnut:", reply_markup=markup)
-            _remember_ui_message(context, query.message)
-        except Exception:
-            sent = await query.message.reply_text("Please choose a type of doughnut:", reply_markup=markup)
-            _remember_ui_message(context, sent)
+        sent = await query.message.reply_text("Please choose a type of doughnut:", reply_markup=markup)
+        _remember_ui_message(context, sent)
         context.chat_data["current_state"] = "PRODUCT"
         return PRODUCT
 
