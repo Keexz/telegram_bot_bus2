@@ -606,10 +606,13 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
     selected_brand = raw_data.replace("brand::", "")
-    logger.info(f"Selected brand: {selected_brand}")
+    normalized_selected = _normalize_text(selected_brand)
+    normalized_mr_dough = _normalize_text(MR_DOUGH_NAME)
+    logger.info(f"Checking submenu match: '{normalized_selected}' == '{normalized_mr_dough}'")
+    
     context.user_data["selected_brand"] = selected_brand
 
-    if _normalize_text(selected_brand) == _normalize_text(MR_DOUGH_NAME):
+    if normalized_selected == normalized_mr_dough:
         markup = _build_mr_dough_submenu_keyboard()
         try:
             logger.info("Attempting to display Mr. Dough submenu...")
