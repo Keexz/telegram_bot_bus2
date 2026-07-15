@@ -350,7 +350,7 @@ async def _check_active_order(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # This acts like /start: wipe everything and show role selection
     query = update.callback_query
-    
+
     if query:
         try:
             await query.answer()
@@ -363,7 +363,7 @@ async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _clear_ui_messages(update, context)
     context.user_data.clear()
     context.chat_data.clear()
-    
+
     # Re-initialize
     context.chat_data["conversation_active"] = True
 
@@ -371,7 +371,7 @@ async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("🛒 I'm a Buyer", callback_data="start_buyer")]]
     markup = InlineKeyboardMarkup(keyboard)
     await msg.reply_text("👋 Welcome! Choose a role to continue:", reply_markup=markup)
-    
+
     return ConversationHandler.END
 
 
@@ -586,25 +586,25 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_reply_keyboard(),
             )
             return PRODUCT
-        
+
         # New flow: Display image and ask for type
         context.user_data["selected_brand"] = submenu["category"]
-        
+
         try:
             await query.message.delete()
         except Exception:
             pass
-            
+
         # Send photo
         image_path = os.path.join(os.path.dirname(__file__), '..', 'photo_2026-07-14_17-56-03.jpg')
         logger.info(f"Attempting to open image: {image_path}")
         with open(image_path, "rb") as photo:
             await query.message.reply_photo(
                 photo=photo,
-                caption="Please choose your product option: single, duo, or triple.",
+                caption="Please choose your product option: single, duo, or trio.",
                 reply_markup=get_reply_keyboard()
             )
-            
+
         context.chat_data["current_state"] = "PRODUCT_TYPE_SELECT"
         return PRODUCT_TYPE_SELECT
 
@@ -643,20 +643,20 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_product_type_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = _normalize_text(update.message.text)
-    
+
     parts = [p.strip() for p in text.replace("and", ",").split(",") if p.strip()]
-    
+
     selected_products = []
     brand = context.user_data.get("selected_brand")
     all_brand_products = _products_for_brand(brand)
-    
+
     # Mapping for keywords to product keywords
     keyword_map = {
         "single": "single",
-        "duo": "pack of 3",
-        "triple": "pack of 3"
+        "duo": "double",
+        "trio": "triple"
     }
-    
+
     for part in parts:
         found = False
         search_term = keyword_map.get(part, part)
@@ -667,13 +667,13 @@ async def handle_product_type_selection(update: Update, context: ContextTypes.DE
                 found = True
                 break
         if not found:
-            await update.message.reply_text(f"Could not find product for '{part}'. Please try again with 'single', 'duo', or 'triple'.")
+            await update.message.reply_text(f"Could not find product for '{part}'. Please try again with 'single', 'duo', or 'trio'.")
             return PRODUCT_TYPE_SELECT
 
     context.user_data["selected_products"] = selected_products
     context.user_data["product_index"] = 0
     context.user_data["order_details"] = []
-    
+
     # Now ask for hall for the first product
     product = selected_products[0]
     await update.message.reply_text(f"Please enter the hall for {_extract_product_name(product)}:")
@@ -832,15 +832,15 @@ async def get_order_hall(update: Update, context: ContextTypes.DEFAULT_TYPE):
     product_index = context.user_data.get("product_index", 0)
     selected_products = context.user_data.get("selected_products", [])
     product = selected_products[product_index]
-    
+
     order_details = context.user_data.get("order_details", [])
     order_details.append({
-        "hall": hall, 
+        "hall": hall,
         "product_name": _extract_product_name(product),
         "product_id": str(product.get("_id") or product.get("id"))
     })
     context.user_data["order_details"] = order_details
-    
+
     await update.message.reply_text(f"What is the room number for {_extract_product_name(product)}?")
     context.chat_data["current_state"] = "ORDER_ROOM"
     return ORDER_ROOM
@@ -856,9 +856,9 @@ async def get_order_room(update: Update, context: ContextTypes.DEFAULT_TYPE):
     order_details = context.user_data.get("order_details", [])
     order_details[product_index]["room_number"] = room_number
     context.user_data["order_details"] = order_details
-    
+
     selected_products = context.user_data.get("selected_products", [])
-    
+
     # Check if more products
     if product_index + 1 < len(selected_products):
         context.user_data["product_index"] = product_index + 1
@@ -893,7 +893,7 @@ async def choose_delivery_time(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # Store delivery window in a way that confirm_order can find it
     context.user_data["delivery_window"] = delivery_window
-    
+
     # Build summary for all products
     summary = "Order summary:\n"
     for detail in order_details:
@@ -919,7 +919,7 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_reply_markup(reply_markup=None)
     except Exception:
         logger.exception("Failed to remove confirm/cancel buttons for order")
-    
+
     order_details = context.user_data.get("order_details")
     if not order_details:
         await query.message.reply_text(
@@ -927,19 +927,19 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_reply_keyboard(),
         )
         return ConversationHandler.END
-    
+
     # Calculate total price for all products
     total_price = 0
     for detail in order_details:
         product = _find_product_record(detail.get("product_id"))
         if product:
             total_price += _extract_product_price(product)
-            
+
     # For now, let's assume quantity is 1 per product since the new flow doesn't explicitly ask for it
     # We might need to ask for quantity in the future if needed
-    
+
     context.user_data["total_price"] = total_price
-    
+
     total_price_formatted = _format_naira(total_price)
     payment_instruction = (
         f"💸 Please transfer the total amount of *{total_price_formatted}* to complete your order:\n\n"
@@ -1015,7 +1015,7 @@ async def get_payment_amount(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ConversationHandler.END
 
     total_price = context.user_data.get("total_price", 0)
-    
+
     # Simple validation: transfer amount should be close to total price
     if abs(transfer_amount - total_price) > 100: # Allow small discrepancy
         await update.message.reply_text(
@@ -1023,16 +1023,16 @@ async def get_payment_amount(update: Update, context: ContextTypes.DEFAULT_TYPE)
             reply_markup=get_reply_keyboard(),
         )
         return PAYMENT_AMOUNT
-    
+
     payment_sender_name = context.user_data.get("payment_sender_name")
     delivery_window = context.user_data.get("delivery_window")
 
     created_at = datetime.utcnow().isoformat()
-    
+
     # Process each order detail
     for detail in order_details:
         product = _find_product_record(detail.get("product_id"))
-        
+
         payload = {
             "date_time": created_at,
             "telegram_username": update.effective_user.username,
@@ -1077,7 +1077,7 @@ async def get_payment_amount(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             for detail in order_details:
                 group_message += f"- {detail.get('product_name')} | Loc: {detail.get('hall')} / {detail.get('room_number')}\n"
-            
+
             group_message += (
                 f"\nTime: {delivery_window}\n"
                 f"Paid From Account: {payment_sender_name}\n"
@@ -1097,7 +1097,7 @@ async def get_payment_amount(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data.pop("total_price", None)
     context.user_data.pop("payment_sender_name", None)
     context.user_data.pop("delivery_window", None)
-    
+
     context.chat_data["current_state"] = None
     await update.message.reply_text(
         f"Thank you. Your order has been received.",
@@ -1394,7 +1394,7 @@ async def process_buyer_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     # This is the actual start of the flow after role selection
     query = update.callback_query
     msg = query.message if query else update.message
-    
+
     if query:
         try:
             await query.answer()
