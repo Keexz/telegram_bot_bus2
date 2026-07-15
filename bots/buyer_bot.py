@@ -1391,59 +1391,49 @@ async def _render_products_list(message, context, products, heading, back_callba
 
 
 async def process_buyer_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # This is the actual start of the flow after role selection
     query = update.callback_query
     msg = query.message if query else update.message
 
+    # 1. Immediate acknowledgment to stop loading indicator
     if query:
         try:
             await query.answer()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to answer callback: {e}")
 
-    # Check for existing user registration
+    logger.info(f"process_buyer_start triggered for user {update.effective_user.id}")
+
     try:
+        # 2. Check registration with robust error handling
+        logger.info("Checking registration...")
         existing = db.buyers_collection.find_one({"telegram_id": update.effective_user.id})
-    except Exception:
-        logger.exception("DB lookup failed in process_buyer_start")
-        await msg.reply_text(
-            "❌ An internal error occurred. Please try again later.",
-            reply_markup=get_reply_keyboard(),
-        )
-        return ConversationHandler.END
+        logger.info(f"Existing buyer: {existing is not None}")
 
-    if existing:
+        if existing:
+            if query:
+                try:
+                    await msg.edit_text(f"👋 Hi {update.effective_user.first_name or 'there'} — welcome back!")
+                except Exception:
+                    await msg.reply_text(f"👋 Hi {update.effective_user.first_name or 'there'} — welcome back!", reply_markup=get_reply_keyboard())
+            else:
+                await msg.reply_text(f"👋 Hi {update.effective_user.first_name or 'there'} — welcome back!", reply_markup=get_reply_keyboard())
+            return await show_brands(update, context, wipe_previous=True)
+
+        # 3. Handle new registration
+        logger.info("New user registration flow.")
         if query:
             try:
-                await msg.edit_text(f"👋 Hi {update.effective_user.first_name or 'there'} — welcome back!")
+                await msg.edit_text("🛍️ Buyer registration — please enter your email address:")
             except Exception:
-                await msg.reply_text(
-                    f"👋 Hi {update.effective_user.first_name or 'there'} — welcome back!",
-                    reply_markup=get_reply_keyboard(),
-                )
+                await msg.reply_text("🛍️ Buyer registration — please enter your email address:", reply_markup=get_reply_keyboard())
         else:
-            await msg.reply_text(
-                f"👋 Hi {update.effective_user.first_name or 'there'} — welcome back!",
-                reply_markup=get_reply_keyboard(),
-            )
-        return await show_brands(update, context, wipe_previous=True)
+            await msg.reply_text("🛍️ Buyer registration — please enter your email address:", reply_markup=get_reply_keyboard())
+        return EMAIL
 
-    # User not registered
-    if query:
-        try:
-            await msg.edit_text("🛍️ Buyer registration — please enter your email address:")
-        except Exception:
-            await msg.reply_text(
-                "🛍️ Buyer registration — please enter your email address:",
-                reply_markup=get_reply_keyboard(),
-            )
-    else:
-        await msg.reply_text(
-            "🛍️ Buyer registration — please enter your email address:",
-            reply_markup=get_reply_keyboard(),
-        )
-    return EMAIL
-
+    except Exception as e:
+        logger.exception("Error in process_buyer_start")
+        await msg.reply_text("❌ An unexpected error occurred. Please try again or type /buyer.")
+        return ConversationHandler.END
 
 async def back_to_brands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
