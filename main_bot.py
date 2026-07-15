@@ -154,9 +154,8 @@ async def cmd_test_orders_group(update: Update, context: ContextTypes.DEFAULT_TY
 # /start Handler
 # --------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("🛒 I'm a Buyer", callback_data="start_buyer")]]
-    markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("👋 Welcome! Choose a role to continue:", reply_markup=markup)
+    from bots.buyer_bot import start_buyer_flow
+    return await start_buyer_flow(update, context)
 
 # --------------------------
 # Global Error Handler
