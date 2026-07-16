@@ -348,7 +348,15 @@ async def _check_active_order(update: Update, context: ContextTypes.DEFAULT_TYPE
     return False
 
 async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # This acts like /start: wipe everything and show role selection
+    # Wipe conversation-specific data without sending "Cancelled" message
+    context.user_data.clear()
+    context.chat_data.clear()
+
+    # Check for active order first
+    if await _check_active_order(update, context):
+        return ConversationHandler.END
+
+    # This acts like /start: wipe everything and directly trigger the buyer process
     query = update.callback_query
 
     if query:
@@ -356,8 +364,6 @@ async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer()
         except Exception:
             pass
-
-    msg = query.message if query else update.message
 
     # Wipe conversation-specific data
     await _clear_ui_messages(update, context)
@@ -367,14 +373,8 @@ async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Re-initialize
     context.chat_data["conversation_active"] = True
 
-    # Show the role selection menu (same as /start)
-    keyboard = [[InlineKeyboardButton("🛒 I'm a Buyer", callback_data="start_buyer")]]
-    markup = InlineKeyboardMarkup(keyboard)
-    await msg.reply_text("👋 Welcome! Choose a role to continue:", reply_markup=markup)
-
-    return ConversationHandler.END
-
-
+    # Directly proceed to the buyer start logic
+    return await process_buyer_start(update, context)
 async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     email = update.message.text.strip()
     if "@" not in email or "." not in email:
@@ -610,19 +610,29 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
     selected_brand = raw_data.replace("brand::", "")
-    logger.info(f"Selected brand: {selected_brand}")
+    normalized_selected = _normalize_text(selected_brand)
+    normalized_mr_dough = _normalize_text(MR_DOUGH_NAME)
+    logger.info(f"Checking submenu match: '{normalized_selected}' == '{normalized_mr_dough}'")
+    
     context.user_data["selected_brand"] = selected_brand
 
-    if _normalize_text(selected_brand) == _normalize_text(MR_DOUGH_NAME):
+    if normalized_selected == normalized_mr_dough:
         markup = _build_mr_dough_submenu_keyboard()
         try:
-            await query.message.edit_text("Please choose a type of doughnut:", reply_markup=markup)
+            logger.info("Attempting to display Mr. Dough submenu...")
+            try:
+                await query.message.edit_text("Please choose a type of doughnut:", reply_markup=markup)
+            except Exception as e:
+                logger.warning(f"Could not edit message, falling back to reply: {e}")
+                await query.message.reply_text("Please choose a type of doughnut:", reply_markup=markup)
+            
             _remember_ui_message(context, query.message)
-        except Exception:
-            sent = await query.message.reply_text("Please choose a type of doughnut:", reply_markup=markup)
-            _remember_ui_message(context, sent)
-        context.chat_data["current_state"] = "PRODUCT"
-        return PRODUCT
+            context.chat_data["current_state"] = "PRODUCT"
+            return PRODUCT
+        except Exception as e:
+            logger.exception(f"Failed to show Mr. Dough submenu: {e}")
+            await query.message.reply_text("❌ An error occurred showing the menu. Please try again.")
+            return BRAND
 
     products = _products_for_brand(selected_brand)
     logger.info(f"Products found: {len(products)}")
