@@ -348,12 +348,10 @@ async def _check_active_order(update: Update, context: ContextTypes.DEFAULT_TYPE
     return False
 
 async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
-<<<<<<< HEAD
     # Wipe conversation-specific data without sending "Cancelled" message
     context.user_data.clear()
     context.chat_data.clear()
 
-=======
     # Check for active order first
     if await _check_active_order(update, context):
         return ConversationHandler.END
