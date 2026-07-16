@@ -601,7 +601,7 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(image_path, "rb") as photo:
             await query.message.reply_photo(
                 photo=photo,
-                caption="Please choose your product option: single, duo, or trio. And you can choose two options(e.g. send single and duo)",
+                caption="Please choose your product option: single, duo, or trio. And you can choose two options(e.g. send single and duo). Enter /cancel to end ordering process.",
                 reply_markup=get_reply_keyboard()
             )
 
