@@ -375,7 +375,6 @@ async def start_buyer_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Re-initialize
     context.chat_data["conversation_active"] = True
 
->>>>>>> 6cbea205750938958661f0fd8d10556a31cddb1e
     # Directly proceed to the buyer start logic
     return await process_buyer_start(update, context)
 async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
