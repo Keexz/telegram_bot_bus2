@@ -589,6 +589,7 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # New flow: Display image and ask for type
         context.user_data["selected_brand"] = submenu["category"]
+        chat_id = update.effective_chat.id
 
         try:
             await query.message.delete()
@@ -600,22 +601,25 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
         image_path = Path(__file__).resolve().parent.parent / "photo_2026-07-14_17-56-03.jpg"
         if not image_path.is_file():
             logger.error(f"Image not found at {image_path}")
-            await query.message.reply_text(
-                "⚠️ Image for Mr. Dough is missing. Please contact support.",
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="⚠️ Image for Mr. Dough is missing. Please contact support.",
                 reply_markup=get_reply_keyboard(),
             )
         else:
             try:
                 with open(image_path, "rb") as photo:
-                    await query.message.reply_photo(
+                    await context.bot.send_photo(
+                        chat_id=chat_id,
                         photo=photo,
                         caption="Please choose your product option: single, duo, or trio. And you can choose two options(e.g. send single and duo). Enter /cancel to end ordering process.",
                         reply_markup=get_reply_keyboard()
                     )
             except Exception as e:
                 logger.exception(f"Failed to send Mr. Dough image: {e}")
-                await query.message.reply_text(
-                    "❌ Unable to display the image. Please try again later.",
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Unable to display the image. Please try again later.",
                     reply_markup=get_reply_keyboard(),
                 )
 
